@@ -122,7 +122,7 @@ const sync = new DualScrollSync(editor, preview, {
   }
 });
 
-// After content changes:
+// After content changes (and after async resources like images/fonts have loaded):
 sync.invalidate();
 
 // Cleanup:
@@ -144,7 +144,7 @@ sync.destroy();
 
 | Method | Description |
 |--------|-------------|
-| `.invalidate()` | Mark the scroll map for rebuild. Call after content or layout changes. |
+| `.invalidate()` | Mark the scroll map for rebuild. Call after content changes, layout changes, window resize, or async resource loading (images, fonts, math rendering). |
 | `.scrollATo(px)` | Programmatically scroll pane A, syncing pane B. |
 | `.scrollBTo(px)` | Programmatically scroll pane B, syncing pane A. |
 | `.destroy()` | Remove all event listeners and stop animation. |
