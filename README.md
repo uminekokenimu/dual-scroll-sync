@@ -140,6 +140,12 @@ sync.destroy();
 | `epsilon` | `number` | `0.15` | Animation stops when residual drops below this. |
 | `scale` | `number` | `10000` | Internal ratio scale. No need to change this. |
 
+### Instance Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `.enabled` | `boolean` | `true` | Set to `false` to suspend all sync (useful when one pane is hidden). Set back to `true` and call `.invalidate()` to resume. |
+
 ### Instance Methods
 
 | Method | Description |

@@ -145,6 +145,14 @@ export class DualScrollSync {
     this.epsilon = options.epsilon ?? DEFAULTS.epsilon;
     this.scale = options.scale ?? DEFAULTS.scale;
 
+    /**
+     * When false, all sync behavior is suspended: wheel events are not
+     * intercepted, and scroll events on either pane are ignored.
+     * Set to false when one pane is hidden; set back to true (and call
+     * invalidate()) when both panes are visible again.
+     */
+    this.enabled = true;
+
     // State
     this._map = null;
     this._mapDirty = true;
@@ -300,6 +308,9 @@ export class DualScrollSync {
   }
 
   _handleWheel(e) {
+    if (!this.enabled) return;
+    // Shift+wheel or pure horizontal scroll → let browser handle natively
+    if (e.shiftKey || (e.deltaX !== 0 && e.deltaY === 0)) return;
     e.preventDefault();
     const map = this._getMap();
 
@@ -330,7 +341,7 @@ export class DualScrollSync {
   // ─── Scrollbar / Keyboard fallback (expected-value circular prevention) ───
 
   _syncBToA() {
-    if (this._wheelControlled) return;
+    if (!this.enabled || this._wheelControlled) return;
     if (
       this._expectedA !== null &&
       Math.abs(this.paneA.scrollTop - this._expectedA) < 2
@@ -348,7 +359,7 @@ export class DualScrollSync {
   }
 
   _syncAToB() {
-    if (this._wheelControlled) return;
+    if (!this.enabled || this._wheelControlled) return;
     if (
       this._expectedB !== null &&
       Math.abs(this.paneB.scrollTop - this._expectedB) < 2

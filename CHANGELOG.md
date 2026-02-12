@@ -12,5 +12,7 @@ Initial release.
   - Scrollbar/keyboard fallback with expected-value circular event prevention
   - Dirty-flag map caching (rebuild only on content/layout changes)
   - `invalidate()`, `scrollATo()`, `scrollBTo()`, `destroy()` API
+  - `enabled` property to suspend/resume sync (e.g., when one pane is hidden)
+  - Shift+wheel and horizontal scroll passthrough (not intercepted)
 - TypeScript type definitions
 - Examples: Markdown editor, diff viewer

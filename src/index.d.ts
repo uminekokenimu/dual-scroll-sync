@@ -96,6 +96,15 @@ export class DualScrollSync {
   /** Second scrollable pane. */
   readonly paneB: HTMLElement;
 
+  /**
+   * When false, all sync behavior is suspended: wheel events are not
+   * intercepted, and scroll events on either pane are ignored.
+   * Set to false when one pane is hidden; set back to true (and call
+   * invalidate()) when both panes are visible again.
+   * @default true
+   */
+  enabled: boolean;
+
   constructor(
     paneA: HTMLElement,
     paneB: HTMLElement,
