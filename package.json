@@ -1,0 +1,45 @@
+{
+  "name": "dual-scroll-sync",
+  "version": "0.1.0",
+  "description": "Synchronized scrolling for two panes with different content heights, using a ratio-normalized virtual axis.",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "types": "src/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "scroll-sync",
+    "synchronized-scroll",
+    "dual-pane",
+    "scroll",
+    "markdown",
+    "latex",
+    "typst",
+    "editor",
+    "preview",
+    "diff-viewer",
+    "virtual-axis"
+  ],
+  "author": "uminekokenimu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uminekokenimu/dual-scroll-sync.git"
+  },
+  "homepage": "https://github.com/uminekokenimu/dual-scroll-sync#readme",
+  "bugs": {
+    "url": "https://github.com/uminekokenimu/dual-scroll-sync/issues"
+  }
+}
