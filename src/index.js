@@ -402,17 +402,25 @@ export class DualScrollSync {
 
   _handleWheel(e) {
     if (!this.enabled) return;
-    // Shift+wheel or pure horizontal scroll → let browser handle natively
+    // Shift+wheel, Ctrl+wheel (zoom), or pure horizontal scroll → let browser handle
     if (e.shiftKey || e.ctrlKey || e.metaKey || (e.deltaX !== 0 && e.deltaY === 0)) return;
     e.preventDefault();
     const map = this._getMap();
 
-    // Scale delta to virtual axis
-    const aMax = Math.max(1, this._scrollMax(this.paneA));
-    const bMax = Math.max(1, this._scrollMax(this.paneB));
-    const factor =
-      this._totalVMax > 0 ? this._totalVMax / Math.max(aMax, bMax) : 1;
-    const delta = e.deltaY * factor * this.wheelScale;
+    // Compute delta on the virtual axis by projecting the native scroll
+    // change of the pane that received the wheel event.  This keeps speed
+    // consistent regardless of document length or the other pane's height.
+    const isA = (e.currentTarget === this.paneA);
+    const pane = isA ? this.paneA : this.paneB;
+    const sMax = Math.max(1, this._scrollMax(pane));
+    const toS  = isA ? this._toAS.bind(this) : this._toBS.bind(this);
+    const axis = isA ? 'aS' : 'bS';
+
+    const curS  = toS(pane.scrollTop);
+    const nextS = toS(Math.max(0, Math.min(sMax,
+      pane.scrollTop + e.deltaY * this.wheelScale)));
+    const delta = mapLookup(map, axis, 'vS', nextS)
+               - mapLookup(map, axis, 'vS', curS);
 
     // Re-sync if stopped
     if (!this._rafRunning) {

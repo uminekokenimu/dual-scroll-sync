@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.3.0 (2026-02-13)
+## 0.4.0 (2026-02-13)
+
+### Changed
+
+- **Pane-relative wheel delta** — wheel input is now projected through the
+  scroll map of the pane that received the event, instead of using a global
+  `totalVMax / max(scrollMaxA, scrollMaxB)` factor. This keeps scroll speed
+  consistent regardless of document length or the other pane's height.
+  Previously, a long document or a preview with many images would cause
+  scroll speed to drop because the global factor shrank.
+
+  `wheelScale: 1` now corresponds exactly to native browser scroll speed.
+  Higher values are a direct multiplier on that native speed.
+
+## 0.3.0
 
 ### Added
 

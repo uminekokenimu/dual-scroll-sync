@@ -1,6 +1,6 @@
 {
   "name": "dual-scroll-sync",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Synchronized scrolling for two panes with different content heights, using a ratio-normalized virtual axis.",
   "main": "src/index.js",
   "module": "src/index.js",
