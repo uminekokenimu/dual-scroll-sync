@@ -1,12 +1,16 @@
 # Changelog
 
-## 0.2.1
+## 0.3.0 (2026-02-13)
+
+### Added
+
+- **`wheelScale` option** — wheel input multiplier (default: `1.0`). Set higher values for faster scrolling. Writable at runtime for dynamic adjustment.
+
+## 0.2.1 (2026-02-13)
 
 ### Fixed
 
-- Ctrl+wheel (browser zoom) and Cmd+wheel (macOS) were blocked by
-  preventDefault in the wheel handler. Now passed through alongside
-  Shift+wheel.
+- **Ctrl+wheel / Cmd+wheel** (browser zoom) and Cmd+wheel (macOS) were blocked by `preventDefault` in the wheel handler. Now passed through alongside Shift+wheel and horizontal scroll.
 
 ## 0.2.0 (2026-02-13)
 

@@ -29,6 +29,8 @@ const DEFAULTS = {
   /** Minimum scroll ratio directly on a snap anchor (0.0–1.0).
    *  e.g. 0.15 means scroll input is reduced to 15% on the anchor. */
   dampMin: 0.15,
+  /** Wheel input multiplier. Higher = faster scrolling. */
+  wheelScale: 1.0,
 };
 
 // ─── Core: Map Builder ───
@@ -156,6 +158,7 @@ export class DualScrollSync {
    * @param {number} [options.snapThreshold=0.001] - Snap range (fraction of scale). 0 = disabled.
    * @param {number} [options.dampZoneFactor=2.5] - Damping zone width (multiple of wheel delta). 0 = disabled.
    * @param {number} [options.dampMin=0.15] - Minimum scroll ratio on a snap anchor.
+   * @param {number} [options.wheelScale=1.0] - Wheel input multiplier. Higher = faster scrolling.
    */
   constructor(paneA, paneB, options) {
     this.paneA = paneA;
@@ -168,6 +171,7 @@ export class DualScrollSync {
     this.snapThreshold = (options.snapThreshold ?? DEFAULTS.snapThreshold) * this.scale;
     this.dampZoneFactor = options.dampZoneFactor ?? DEFAULTS.dampZoneFactor;
     this.dampMin = options.dampMin ?? DEFAULTS.dampMin;
+    this.wheelScale = options.wheelScale ?? DEFAULTS.wheelScale;
 
     /**
      * When false, all sync behavior is suspended: wheel events are not
@@ -408,7 +412,7 @@ export class DualScrollSync {
     const bMax = Math.max(1, this._scrollMax(this.paneB));
     const factor =
       this._totalVMax > 0 ? this._totalVMax / Math.max(aMax, bMax) : 1;
-    const delta = e.deltaY * factor;
+    const delta = e.deltaY * factor * this.wheelScale;
 
     // Re-sync if stopped
     if (!this._rafRunning) {

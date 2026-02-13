@@ -85,6 +85,12 @@ export interface DualScrollSyncOptions {
    * @default 0.15
    */
   dampMin?: number;
+
+  /**
+   * Wheel input multiplier. Higher values = faster scrolling.
+   * @default 1.0
+   */
+  wheelScale?: number;
 }
 
 /**
@@ -145,6 +151,8 @@ export class DualScrollSync {
   dampZoneFactor: number;
   /** Minimum scroll ratio on a snap anchor. Writable for runtime tuning. */
   dampMin: number;
+  /** Wheel input multiplier. Writable for runtime tuning. */
+  wheelScale: number;
 
   constructor(
     paneA: HTMLElement,

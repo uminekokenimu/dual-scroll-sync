@@ -179,6 +179,7 @@ sync.destroy();
 | `snapThreshold` | `number` | `0.001` | Snap range as fraction of scale. `0` = disabled. |
 | `dampZoneFactor` | `number` | `2.5` | Damping zone width as multiple of wheel delta. `0` = disabled. |
 | `dampMin` | `number` | `0.15` | Minimum scroll ratio on a snap anchor (0.0–1.0). |
+| `wheelScale` | `number` | `1.0` | Wheel input multiplier. Higher = faster scrolling. |
 
 ### Instance Properties
 
@@ -188,6 +189,7 @@ sync.destroy();
 | `.snapThreshold` | `number` | | Writable for runtime tuning. |
 | `.dampZoneFactor` | `number` | | Writable for runtime tuning. |
 | `.dampMin` | `number` | | Writable for runtime tuning. |
+| `.wheelScale` | `number` | | Writable for runtime tuning. |
 
 ### Instance Methods
 
