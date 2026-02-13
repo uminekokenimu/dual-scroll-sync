@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Ctrl+wheel (browser zoom) and Cmd+wheel (macOS) were blocked by
+  preventDefault in the wheel handler. Now passed through alongside
+  Shift+wheel.
+
 ## 0.2.0 (2026-02-13)
 
 ### Added

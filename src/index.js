@@ -399,7 +399,7 @@ export class DualScrollSync {
   _handleWheel(e) {
     if (!this.enabled) return;
     // Shift+wheel or pure horizontal scroll → let browser handle natively
-    if (e.shiftKey || (e.deltaX !== 0 && e.deltaY === 0)) return;
+    if (e.shiftKey || e.ctrlKey || e.metaKey || (e.deltaX !== 0 && e.deltaY === 0)) return;
     e.preventDefault();
     const map = this._getMap();
 
