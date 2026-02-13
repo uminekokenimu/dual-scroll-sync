@@ -13,6 +13,8 @@ export interface Anchor {
   a: number;
   /** Normalized position in pane B (0–1). */
   b: number;
+  /** If true, this anchor is a damping/snap target. */
+  snap?: boolean;
 }
 
 /** A single entry in the scroll map. */
@@ -23,6 +25,8 @@ export interface MapEntry {
   bS: number;
   /** Position on the virtual scroll axis (cumulative). */
   vS: number;
+  /** Whether this entry is a snap target. */
+  snap?: boolean;
 }
 
 /** Valid axis keys for map lookup. */
@@ -32,9 +36,15 @@ export type MapKey = 'aS' | 'bS' | 'vS';
 export interface DualScrollSyncOptions {
   /**
    * Function returning anchor points. Called when the map is rebuilt.
-   * Each anchor: { a: 0–1 position in pane A, b: 0–1 position in pane B }.
+   * Each anchor: { a: 0–1 position in pane A, b: 0–1 position in pane B,
+   * snap: optional boolean to mark as damping/snap target }.
    */
   getAnchors: () => Anchor[];
+
+  /**
+   * Called after each synchronised scroll update.
+   */
+  onSync?: () => void;
 
   /**
    * LERP smoothing factor (0–1). Lower = smoother but slower to converge.
@@ -53,12 +63,35 @@ export interface DualScrollSyncOptions {
    * @default 10000
    */
   scale?: number;
+
+  /**
+   * After LERP converges, snap to the nearest snap-anchor within
+   * this fraction of scale. Set 0 to disable snapping.
+   * @default 0.001
+   */
+  snapThreshold?: number;
+
+  /**
+   * Damping zone width as a multiple of the current wheel delta.
+   * Within this zone, scroll input is reduced via smoothstep.
+   * Set 0 to disable damping.
+   * @default 2.5
+   */
+  dampZoneFactor?: number;
+
+  /**
+   * Minimum scroll ratio directly on a snap anchor (0.0–1.0).
+   * e.g. 0.15 means scroll input is reduced to 15% on the anchor.
+   * @default 0.15
+   */
+  dampMin?: number;
 }
 
 /**
  * Build a sparse scroll map in ratio space.
  *
  * @param anchors - Anchor points with normalized positions (0–1) in each pane.
+ *   Optional snap flag marks anchors as damping/snap targets.
  *   Does NOT need to include (0,0) or (1,1) — they are added automatically.
  * @param scale - Internal scale factor (default: 10000).
  * @returns Scroll map entries sorted by aS with cumulative vS.
@@ -89,6 +122,7 @@ export function mapLookup(
  * Creates a virtual scroll axis where both panes are equal citizens.
  * Handles wheel events (with LERP animation), scrollbar interaction
  * (with circular event prevention), and programmatic scrolling.
+ * Supports snap anchors for damping and settle-on-stop behavior.
  */
 export class DualScrollSync {
   /** First scrollable pane. */
@@ -105,6 +139,13 @@ export class DualScrollSync {
    */
   enabled: boolean;
 
+  /** Snap range on the virtual axis. Writable for runtime tuning. */
+  snapThreshold: number;
+  /** Damping zone width as multiple of wheel delta. Writable for runtime tuning. */
+  dampZoneFactor: number;
+  /** Minimum scroll ratio on a snap anchor. Writable for runtime tuning. */
+  dampMin: number;
+
   constructor(
     paneA: HTMLElement,
     paneB: HTMLElement,
@@ -116,6 +157,12 @@ export class DualScrollSync {
    * Call after content changes, layout changes, or window resize.
    */
   invalidate(): void;
+
+  /**
+   * Re-derive the virtual axis from both panes' current scrollTop.
+   * Use after programmatic jumps that move both panes independently.
+   */
+  resync(): void;
 
   /**
    * Programmatically scroll pane A to a given scrollTop, syncing pane B.

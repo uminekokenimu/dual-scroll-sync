@@ -5,6 +5,9 @@
  * Uses a ratio-normalized virtual axis so both panes are treated symmetrically —
  * no primary/secondary distinction, no overflow handling, no edge-case stalling.
  *
+ * v0.2.0 adds snap anchors: optional damping near important positions and
+ * gentle settle-on-stop behavior.
+ *
  * @license MIT
  */
 
@@ -17,6 +20,15 @@ const DEFAULTS = {
   epsilon: 0.15,
   /** Internal scale for ratio space. Larger = more precision. */
   scale: 10000,
+  /** Snap range as fraction of scale. After LERP converges, snap to the nearest
+   *  snap-anchor within this range. Set 0 to disable. */
+  snapThreshold: 0.001,
+  /** Damping zone width as a multiple of the current wheel delta.
+   *  Within this zone, scroll input is reduced via smoothstep. Set 0 to disable. */
+  dampZoneFactor: 2.5,
+  /** Minimum scroll ratio directly on a snap anchor (0.0–1.0).
+   *  e.g. 0.15 means scroll input is reduced to 15% on the anchor. */
+  dampMin: 0.15,
 };
 
 // ─── Core: Map Builder ───
@@ -24,20 +36,22 @@ const DEFAULTS = {
 /**
  * Build a sparse scroll map in ratio space.
  *
- * @param {Array<{a: number, b: number}>} anchors
+ * @param {Array<{a: number, b: number, snap?: boolean}>} anchors
  *   Anchor points where a = normalized position in pane A (0–1)
  *   and b = normalized position in pane B (0–1).
+ *   Optional snap = true marks the anchor as a damping/snap target.
  *   Does NOT need to include (0,0) or (1,1) — they are added automatically.
  * @param {number} scale - Internal scale factor.
- * @returns {Array<{aS: number, bS: number, vS: number}>} Scroll map entries.
+ * @returns {Array<{aS: number, bS: number, vS: number, snap?: boolean}>} Scroll map entries.
  */
 export function buildMap(anchors, scale = DEFAULTS.scale) {
   const S = scale;
 
   // Convert normalized 0–1 to 0–SCALE and collect
-  const raw = anchors.map(({ a, b }) => ({
+  const raw = anchors.map(({ a, b, snap }) => ({
     aS: Math.min(S, Math.max(0, a * S)),
     bS: Math.min(S, Math.max(0, b * S)),
+    snap: !!snap,
   }));
 
   // Sort by aS (pane A position order)
@@ -50,7 +64,7 @@ export function buildMap(anchors, scale = DEFAULTS.scale) {
 
   for (const entry of raw) {
     if (entry.bS >= lastBS && entry.aS > map[map.length - 1].aS) {
-      map.push({ aS: entry.aS, bS: entry.bS, vS: 0 });
+      map.push({ aS: entry.aS, bS: entry.bS, vS: 0, snap: entry.snap });
       lastBS = entry.bS;
     }
   }
@@ -121,6 +135,7 @@ export function mapLookup(map, fromKey, toKey, value) {
  *     return Array.from(previewEl.querySelectorAll('[data-line]')).map(el => ({
  *       a: getEditorPxForLine(+el.dataset.line) / edMax,
  *       b: el.offsetTop / pvMax,
+ *       snap: /^H[1-6]$/.test(el.tagName),
  *     }));
  *   }
  * });
@@ -130,20 +145,29 @@ export class DualScrollSync {
    * @param {HTMLElement} paneA - First scrollable element.
    * @param {HTMLElement} paneB - Second scrollable element.
    * @param {Object} options
-   * @param {() => Array<{a: number, b: number}>} options.getAnchors
+   * @param {() => Array<{a: number, b: number, snap?: boolean}>} options.getAnchors
    *   Function returning anchor points. Called when the map is rebuilt.
-   *   Each anchor: { a: 0–1 position in pane A, b: 0–1 position in pane B }.
+   *   Each anchor: { a: 0–1 position in pane A, b: 0–1 position in pane B,
+   *   snap: optional boolean to mark as damping/snap target }.
+   * @param {function} [options.onSync] - Called after each synchronised scroll update.
    * @param {number} [options.lerp=0.18] - LERP smoothing factor.
    * @param {number} [options.epsilon=0.15] - Animation stop threshold.
    * @param {number} [options.scale=10000] - Internal ratio scale.
+   * @param {number} [options.snapThreshold=0.001] - Snap range (fraction of scale). 0 = disabled.
+   * @param {number} [options.dampZoneFactor=2.5] - Damping zone width (multiple of wheel delta). 0 = disabled.
+   * @param {number} [options.dampMin=0.15] - Minimum scroll ratio on a snap anchor.
    */
   constructor(paneA, paneB, options) {
     this.paneA = paneA;
     this.paneB = paneB;
     this.getAnchors = options.getAnchors;
+    this.onSync = options.onSync || null;
     this.lerp = options.lerp ?? DEFAULTS.lerp;
     this.epsilon = options.epsilon ?? DEFAULTS.epsilon;
     this.scale = options.scale ?? DEFAULTS.scale;
+    this.snapThreshold = (options.snapThreshold ?? DEFAULTS.snapThreshold) * this.scale;
+    this.dampZoneFactor = options.dampZoneFactor ?? DEFAULTS.dampZoneFactor;
+    this.dampMin = options.dampMin ?? DEFAULTS.dampMin;
 
     /**
      * When false, all sync behavior is suspended: wheel events are not
@@ -159,6 +183,8 @@ export class DualScrollSync {
     this._targetV = 0;
     this._currentV = 0;
     this._totalVMax = 0;
+    this._snapPoints = [];
+    this._snapped = false;
     this._rafId = null;
     this._rafRunning = false;
     this._wheelControlled = false;
@@ -166,6 +192,7 @@ export class DualScrollSync {
     this._lastSetB = null;
     this._expectedA = null;
     this._expectedB = null;
+    this._syncing = false;
 
     // Bind handlers
     this._onWheel = this._handleWheel.bind(this);
@@ -185,6 +212,23 @@ export class DualScrollSync {
   /** Mark the scroll map as needing rebuild (call after content/layout changes). */
   invalidate() {
     this._mapDirty = true;
+  }
+
+  /**
+   * Re-derive the virtual axis from both panes' current scrollTop.
+   * Use after programmatic jumps that move both panes independently.
+   */
+  resync() {
+    this._stopAnimation();
+    this._syncing = true;
+    const map = this._getMap();
+    const aS = this._toAS(this.paneA.scrollTop);
+    const bS = this._toBS(this.paneB.scrollTop);
+    const vA = mapLookup(map, 'aS', 'vS', aS);
+    const vB = mapLookup(map, 'bS', 'vS', bS);
+    this._currentV = Math.max(vA, vB);
+    this._targetV = this._currentV;
+    requestAnimationFrame(() => { this._syncing = false; });
   }
 
   /** Programmatically scroll pane A to a given scrollTop, syncing pane B. */
@@ -242,6 +286,7 @@ export class DualScrollSync {
       this._map = buildMap(anchors, this.scale);
       this._totalVMax =
         this._map.length > 0 ? this._map[this._map.length - 1].vS : 0;
+      this._snapPoints = this._map.filter(e => e.snap).map(e => e.vS);
       this._mapDirty = false;
     }
     return this._map;
@@ -254,9 +299,12 @@ export class DualScrollSync {
     this._wheelControlled = false;
     this._lastSetA = null;
     this._lastSetB = null;
+    this._expectedA = null;
+    this._expectedB = null;
   }
 
   _startAnimation() {
+    this._snapped = false;
     if (!this._rafRunning) {
       this._rafRunning = true;
       this._wheelControlled = true;
@@ -265,6 +313,31 @@ export class DualScrollSync {
       this._rafId = requestAnimationFrame(this._frame);
     }
   }
+
+  // ─── Snap helpers ───
+
+  /**
+   * Binary-search for the snap point closest to v.
+   * @param {number} v - Position on the virtual axis.
+   * @returns {number|null}
+   */
+  _findNearestSnap(v) {
+    const pts = this._snapPoints;
+    if (pts.length === 0) return null;
+    let lo = 0, hi = pts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (pts[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    let best = pts[lo];
+    if (lo > 0 && Math.abs(pts[lo - 1] - v) < Math.abs(best - v)) {
+      best = pts[lo - 1];
+    }
+    return best;
+  }
+
+  // ─── Animation ───
 
   _animationFrame() {
     // Detect external scroll changes
@@ -300,12 +373,28 @@ export class DualScrollSync {
     this._lastSetA = this.paneA.scrollTop;
     this._lastSetB = this.paneB.scrollTop;
 
+    if (this.onSync) this.onSync();
+
     if (Math.abs(this._targetV - this._currentV) > this.epsilon) {
       this._rafId = requestAnimationFrame(this._frame);
     } else {
+      // LERP converged — try snap before stopping
+      if (!this._snapped && this._snapPoints.length > 0) {
+        const nearest = this._findNearestSnap(this._currentV);
+        if (nearest !== null
+            && Math.abs(nearest - this._currentV) > 0.01
+            && Math.abs(nearest - this._currentV) < this.snapThreshold) {
+          this._targetV = nearest;
+          this._snapped = true;
+          this._rafId = requestAnimationFrame(this._frame);
+          return;
+        }
+      }
       this._stopAnimation();
     }
   }
+
+  // ─── Wheel handling ───
 
   _handleWheel(e) {
     if (!this.enabled) return;
@@ -331,9 +420,24 @@ export class DualScrollSync {
       this._targetV = this._currentV;
     }
 
+    // Dampen near snap anchors (smoothstep)
+    let damping = 1.0;
+    if (this._snapPoints.length > 0 && this.dampZoneFactor > 0) {
+      const effectiveDampZone = Math.abs(delta) * this.dampZoneFactor;
+      const nearest = this._findNearestSnap(this._targetV);
+      if (nearest !== null) {
+        const dist = Math.abs(this._targetV - nearest);
+        if (dist < effectiveDampZone) {
+          const t = dist / effectiveDampZone;
+          const s = t * t * (3 - 2 * t); // smoothstep
+          damping = this.dampMin + (1 - this.dampMin) * s;
+        }
+      }
+    }
+
     this._targetV = Math.max(
       0,
-      Math.min(this._totalVMax, this._targetV + delta)
+      Math.min(this._totalVMax, this._targetV + delta * damping)
     );
     this._startAnimation();
   }
@@ -341,7 +445,7 @@ export class DualScrollSync {
   // ─── Scrollbar / Keyboard fallback (expected-value circular prevention) ───
 
   _syncBToA() {
-    if (!this.enabled || this._wheelControlled) return;
+    if (!this.enabled || this._wheelControlled || this._syncing) return;
     if (
       this._expectedA !== null &&
       Math.abs(this.paneA.scrollTop - this._expectedA) < 2
@@ -351,15 +455,14 @@ export class DualScrollSync {
     }
     const map = this._getMap();
     const aS = this._toAS(this.paneA.scrollTop);
-    const bS = mapLookup(map, 'aS', 'bS', aS);
-    this._expectedB = this._fromBS(bS);
+    this._expectedB = this._fromBS(mapLookup(map, 'aS', 'bS', aS));
     this.paneB.scrollTop = this._expectedB;
     this._targetV = mapLookup(map, 'aS', 'vS', aS);
     this._currentV = this._targetV;
   }
 
   _syncAToB() {
-    if (!this.enabled || this._wheelControlled) return;
+    if (!this.enabled || this._wheelControlled || this._syncing) return;
     if (
       this._expectedB !== null &&
       Math.abs(this.paneB.scrollTop - this._expectedB) < 2
@@ -369,8 +472,7 @@ export class DualScrollSync {
     }
     const map = this._getMap();
     const bS = this._toBS(this.paneB.scrollTop);
-    const aS = mapLookup(map, 'bS', 'aS', bS);
-    this._expectedA = this._fromAS(aS);
+    this._expectedA = this._fromAS(mapLookup(map, 'bS', 'aS', bS));
     this.paneA.scrollTop = this._expectedA;
     this._targetV = mapLookup(map, 'bS', 'vS', bS);
     this._currentV = this._targetV;
