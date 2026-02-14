@@ -8,6 +8,11 @@
  * v0.2.0 adds snap anchors: optional damping near important positions and
  * gentle settle-on-stop behavior.
  *
+ * v0.5.0 changes wheel delta to be virtual-pane-absolute: one wheel notch
+ * moves a fixed proportion of the virtual axis regardless of which pane
+ * received the event, eliminating speed asymmetry in documents with large
+ * content-length differences between panes.
+ *
  * @license MIT
  */
 
@@ -407,20 +412,13 @@ export class DualScrollSync {
     e.preventDefault();
     const map = this._getMap();
 
-    // Compute delta on the virtual axis by projecting the native scroll
-    // change of the pane that received the wheel event.  This keeps speed
-    // consistent regardless of document length or the other pane's height.
-    const isA = (e.currentTarget === this.paneA);
-    const pane = isA ? this.paneA : this.paneB;
-    const sMax = Math.max(1, this._scrollMax(pane));
-    const toS  = isA ? this._toAS.bind(this) : this._toBS.bind(this);
-    const axis = isA ? 'aS' : 'bS';
-
-    const curS  = toS(pane.scrollTop);
-    const nextS = toS(Math.max(0, Math.min(sMax,
-      pane.scrollTop + e.deltaY * this.wheelScale)));
-    const delta = mapLookup(map, axis, 'vS', nextS)
-               - mapLookup(map, axis, 'vS', curS);
+    // Compute delta on the virtual axis.
+    // The virtual pane is the absolute reference — one wheel notch moves a
+    // fixed proportion of vS, independent of which physical pane received the
+    // event.  Each pane's actual pixel movement is determined solely by the
+    // segment's density ratio (aS/vS and bS/vS).
+    const avgScrollMax = (this._scrollMax(this.paneA) + this._scrollMax(this.paneB)) / 2;
+    const delta = (e.deltaY * this.wheelScale / Math.max(1, avgScrollMax)) * this._totalVMax;
 
     // Re-sync if stopped
     if (!this._rafRunning) {

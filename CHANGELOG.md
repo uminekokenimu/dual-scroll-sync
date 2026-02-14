@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0 (2026-02-14)
+
+### Changed
+
+- **Virtual-pane-absolute wheel delta** — wheel input now moves a fixed
+  proportion of the virtual axis, independent of which physical pane received
+  the event.  The conversion uses the average scrollMax of both panes as the
+  baseline.  This replaces the per-pane projection introduced in v0.4.0.
+
+  Previously, the same wheel notch produced different vS deltas depending on
+  which pane it occurred in and which map segment the pane was in.  In documents
+  with large content-length asymmetry (e.g. a Markdown table that renders much
+  taller in preview), this caused the faster pane to scroll at many times native
+  speed.
+
+  Now the virtual pane is the absolute reference.  Each physical pane's pixel
+  movement is determined solely by the segment's density ratio (aS/vS and
+  bS/vS), which is exactly what `buildMap` already encodes.  Scroll feel is
+  consistent across all positions in the document and symmetric between panes.
+
+  `wheelScale` remains a direct multiplier on scroll speed.
+
 ## 0.4.0 (2026-02-13)
 
 ### Changed
@@ -14,7 +36,7 @@
   `wheelScale: 1` now corresponds exactly to native browser scroll speed.
   Higher values are a direct multiplier on that native speed.
 
-## 0.3.0
+## 0.3.0 (2026-02-13)
 
 ### Added
 
