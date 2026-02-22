@@ -1,1119 +1,1301 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dual-scroll-sync v9</title>
+    <style>
+      :root {
+        --bg: #1a1a2e;
+        --surface: #16213e;
+        --surface2: #0f3460;
+        --accent: #e94560;
+        --accent2: #f59e0b;
+        --text: #e0e0e0;
+        --text-dim: #8892a4;
+        --border: #2a3a5c;
+        --gutter-bg: #0d1b36;
+        --fm: "Consolas", "Monaco", "Courier New", monospace;
+        --fs: Georgia, "Source Serif 4", serif;
+      }
 
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>dual-scroll-sync v9</title>
-  <style>
-    :root {
-      --bg: #1a1a2e;
-      --surface: #16213e;
-      --surface2: #0f3460;
-      --accent: #e94560;
-      --accent2: #f59e0b;
-      --text: #e0e0e0;
-      --text-dim: #8892a4;
-      --border: #2a3a5c;
-      --gutter-bg: #0d1b36;
-      --fm: 'Consolas', 'Monaco', 'Courier New', monospace;
-      --fs: Georgia, 'Source Serif 4', serif;
-    }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--fm);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--fm);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
+      header {
+        padding: 10px 20px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-shrink: 0;
+      }
 
-    header {
-      padding: 10px 20px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-shrink: 0;
-    }
+      header h1 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--accent);
+      }
 
-    header h1 {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--accent);
-    }
+      header .badge {
+        font-size: 9px;
+        background: var(--accent);
+        color: #fff;
+        padding: 2px 7px;
+        border-radius: 3px;
+        font-weight: 600;
+      }
 
-    header .badge {
-      font-size: 9px;
-      background: var(--accent);
-      color: #fff;
-      padding: 2px 7px;
-      border-radius: 3px;
-      font-weight: 600;
-    }
+      header .info {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--text-dim);
+      }
 
-    header .info {
-      margin-left: auto;
-      font-size: 10px;
-      color: var(--text-dim);
-    }
+      header .info span {
+        color: var(--accent2);
+        font-weight: 600;
+      }
 
-    header .info span {
-      color: var(--accent2);
-      font-weight: 600;
-    }
+      .main {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
 
-    .main {
-      flex: 1;
-      display: flex;
-      overflow: hidden;
-    }
+      .pw {
+        flex: 1;
+        display: flex;
+        position: relative;
+        min-width: 0;
+      }
 
-    .pw {
-      flex: 1;
-      display: flex;
-      position: relative;
-      min-width: 0;
-    }
+      .pw + .pw {
+        border-left: 1px solid var(--border);
+      }
 
-    .pw+.pw {
-      border-left: 1px solid var(--border);
-    }
+      .pl {
+        position: absolute;
+        top: 6px;
+        left: 10px;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--text-dim);
+        z-index: 5;
+        pointer-events: none;
+      }
 
-    .pl {
-      position: absolute;
-      top: 6px;
-      left: 10px;
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: var(--text-dim);
-      z-index: 5;
-      pointer-events: none;
-    }
+      .pane {
+        flex: 1;
+        overflow-y: auto;
+        padding: 28px 18px 80px;
+        scroll-behavior: auto;
+        min-width: 0;
+      }
 
-    .pane {
-      flex: 1;
-      overflow-y: auto;
-      padding: 28px 18px 80px;
-      scroll-behavior: auto;
-      min-width: 0;
-    }
+      .pane::-webkit-scrollbar {
+        width: 5px;
+      }
 
-    .pane::-webkit-scrollbar {
-      width: 5px;
-    }
+      .pane::-webkit-scrollbar-track {
+        background: transparent;
+      }
 
-    .pane::-webkit-scrollbar-track {
-      background: transparent;
-    }
+      .pane::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
 
-    .pane::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 3px;
-    }
+      #ind {
+        width: 12px;
+        flex-shrink: 0;
+        background: var(--gutter-bg);
+        border-left: 1px solid var(--border);
+        border-right: 1px solid var(--border);
+        position: relative;
+        cursor: pointer;
+        user-select: none;
+      }
 
-    #ind {
-      width: 12px;
-      flex-shrink: 0;
-      background: var(--gutter-bg);
-      border-left: 1px solid var(--border);
-      border-right: 1px solid var(--border);
-      position: relative;
-      cursor: pointer;
-      user-select: none;
-    }
+      .im {
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        height: 2px;
+        background: var(--accent2);
+        border-radius: 1px;
+        pointer-events: none;
+      }
 
-    .im {
-      position: absolute;
-      left: 2px;
-      right: 2px;
-      height: 2px;
-      background: var(--accent2);
-      border-radius: 1px;
-      pointer-events: none;
-    }
+      .ic {
+        position: absolute;
+        left: 1px;
+        right: 1px;
+        height: 3px;
+        background: var(--accent);
+        border-radius: 2px;
+        pointer-events: none;
+        box-shadow: 0 0 6px var(--accent);
+      }
 
-    .ic {
-      position: absolute;
-      left: 1px;
-      right: 1px;
-      height: 3px;
-      background: var(--accent);
-      border-radius: 2px;
-      pointer-events: none;
-      box-shadow: 0 0 6px var(--accent);
-    }
+      #ed {
+        font-family: var(--fm);
+        font-size: 12.5px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        outline: none;
+        color: var(--text);
+        caret-color: var(--accent);
+        tab-size: 2;
+      }
 
-    #ed {
-      font-family: var(--fm);
-      font-size: 12.5px;
-      line-height: 1.65;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      outline: none;
-      color: var(--text);
-      caret-color: var(--accent);
-      tab-size: 2;
-    }
+      #pv {
+        font-family: var(--fs);
+        font-size: 15px;
+        line-height: 1.75;
+      }
 
-    #pv {
-      font-family: var(--fs);
-      font-size: 15px;
-      line-height: 1.75;
-    }
+      #pv h1,
+      #pv h2,
+      #pv h3 {
+        font-family: var(--fs);
+        color: var(--accent2);
+        margin: 1.4em 0 0.4em;
+        line-height: 1.3;
+      }
 
-    #pv h1,
-    #pv h2,
-    #pv h3 {
-      font-family: var(--fs);
-      color: var(--accent2);
-      margin: 1.4em 0 .4em;
-      line-height: 1.3;
-    }
+      #pv h1 {
+        font-size: 26px;
+        border-bottom: 2px solid var(--accent);
+        padding-bottom: 6px;
+      }
 
-    #pv h1 {
-      font-size: 26px;
-      border-bottom: 2px solid var(--accent);
-      padding-bottom: 6px;
-    }
+      #pv h2 {
+        font-size: 21px;
+      }
 
-    #pv h2 {
-      font-size: 21px;
-    }
+      #pv h3 {
+        font-size: 17px;
+      }
 
-    #pv h3 {
-      font-size: 17px;
-    }
+      #pv p {
+        margin: 0.7em 0;
+      }
 
-    #pv p {
-      margin: .7em 0;
-    }
+      #pv ul,
+      #pv ol {
+        margin: 0.7em 0 0.7em 1.4em;
+      }
 
-    #pv ul,
-    #pv ol {
-      margin: .7em 0 .7em 1.4em;
-    }
+      #pv li {
+        margin: 0.2em 0;
+      }
 
-    #pv li {
-      margin: .2em 0;
-    }
+      #pv code {
+        font-family: var(--fm);
+        font-size: 11.5px;
+        background: var(--surface2);
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
 
-    #pv code {
-      font-family: var(--fm);
-      font-size: 11.5px;
-      background: var(--surface2);
-      padding: 2px 5px;
-      border-radius: 3px;
-    }
+      #pv pre {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 12px;
+        margin: 0.8em 0;
+        overflow-x: auto;
+      }
 
-    #pv pre {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 12px;
-      margin: .8em 0;
-      overflow-x: auto;
-    }
+      #pv pre code {
+        background: none;
+        padding: 0;
+        font-size: 11.5px;
+        line-height: 1.55;
+      }
 
-    #pv pre code {
-      background: none;
-      padding: 0;
-      font-size: 11.5px;
-      line-height: 1.55;
-    }
+      #pv blockquote {
+        border-left: 3px solid var(--accent);
+        padding-left: 12px;
+        color: var(--text-dim);
+        margin: 0.8em 0;
+        font-style: italic;
+      }
 
-    #pv blockquote {
-      border-left: 3px solid var(--accent);
-      padding-left: 12px;
-      color: var(--text-dim);
-      margin: .8em 0;
-      font-style: italic;
-    }
+      #pv strong {
+        color: #fff;
+      }
 
-    #pv strong {
-      color: #fff;
-    }
+      #pv em {
+        color: var(--text-dim);
+      }
 
-    #pv em {
-      color: var(--text-dim);
-    }
+      #pv hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 1.8em 0;
+      }
 
-    #pv hr {
-      border: none;
-      border-top: 1px solid var(--border);
-      margin: 1.8em 0;
-    }
+      #pv table {
+        border-collapse: collapse;
+        margin: 0.8em 0;
+        width: 100%;
+      }
 
-    #pv table {
-      border-collapse: collapse;
-      margin: .8em 0;
-      width: 100%;
-    }
+      #pv th,
+      #pv td {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        text-align: left;
+        font-size: 13px;
+      }
 
-    #pv th,
-    #pv td {
-      padding: 6px 12px;
-      border: 1px solid var(--border);
-      text-align: left;
-      font-size: 13px;
-    }
+      #pv th {
+        background: var(--surface2);
+        color: var(--accent2);
+        font-weight: 600;
+      }
 
-    #pv th {
-      background: var(--surface2);
-      color: var(--accent2);
-      font-weight: 600;
-    }
+      footer {
+        padding: 6px 20px;
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        font-size: 10px;
+        color: var(--text-dim);
+        display: flex;
+        gap: 20px;
+        flex-shrink: 0;
+      }
 
-    footer {
-      padding: 6px 20px;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-      font-size: 10px;
-      color: var(--text-dim);
-      display: flex;
-      gap: 20px;
-      flex-shrink: 0;
-    }
+      footer .v {
+        color: var(--accent2);
+        font-weight: 600;
+      }
+    </style>
+  </head>
 
-    footer .v {
-      color: var(--accent2);
-      font-weight: 600;
-    }
-  </style>
-</head>
-
-<body>
-  <header>
-    <h1>dual-scroll-sync</h1><span class="badge">v9</span>
-    <div class="info">Anchors: <span id="sa">-</span> | vTotal: <span id="sv">-</span>px | Snap: <span
-        id="ssnap">-</span></div>
-  </header>
-  <div class="main">
-    <div class="pw"><span class="pl">Editor</span>
-      <div id="ep" class="pane">
-        <div id="ed" contenteditable="true" spellcheck="false"></div>
+  <body>
+    <header>
+      <h1>dual-scroll-sync</h1>
+      <span class="badge">v9</span>
+      <div class="info">
+        Anchors: <span id="sa">-</span> | vTotal: <span id="sv">-</span>px |
+        Snap: <span id="ssnap">-</span>
+      </div>
+    </header>
+    <div class="main">
+      <div class="pw">
+        <span class="pl">Editor</span>
+        <div id="ep" class="pane">
+          <div id="ed" contenteditable="true" spellcheck="false"></div>
+        </div>
+      </div>
+      <div id="ind">
+        <div class="ic" id="ic"></div>
+      </div>
+      <div class="pw">
+        <span class="pl">Preview</span>
+        <div id="pp" class="pane">
+          <div id="pv"></div>
+        </div>
       </div>
     </div>
-    <div id="ind">
-      <div class="ic" id="ic"></div>
-    </div>
-    <div class="pw"><span class="pl">Preview</span>
-      <div id="pp" class="pane">
-        <div id="pv"></div>
-      </div>
-    </div>
-  </div>
-  <footer>
-    <div>A: <span class="v" id="fa">0</span>px</div>
-    <div>B: <span class="v" id="fb">0</span>px</div>
-    <div>V: <span class="v" id="fv">0</span>px</div>
-  </footer>
-  <script>
-    /**
-     * dual-scroll-sync v9
-     *
-     * Synchronized scrolling for two panes with different content heights.
-     *
-     * Each segment's virtual length is `vS = max(aS, bS)` — the pane with
-     * more content scrolls at normal speed; the other follows proportionally.
-     * Wheel input moves along the virtual axis in pixels: one notch moves
-     * the dominant pane exactly `deltaY` pixels, like normal browser scrolling.
-     *
-     * Optional features (independently disabled by setting to 0):
-     * - **Damping**: smoothstep deceleration near snap anchors.
-     * - **Snap**: settle to nearest snap anchor after wheel input stops.
-     *
-     * @module dual-scroll-sync
-     * @version 0.6.0
-     * @license MIT
-     */
-
-    // ─── Types ───
-
-    /**
-     * @typedef {Object} ScrollPane
-     * @property {number} scrollTop   - Current scroll offset (read/write).
-     * @property {number} scrollHeight - Total content height (read-only).
-     * @property {number} clientHeight - Visible viewport height (read-only).
-     * @property {function} addEventListener
-     * @property {function} removeEventListener
-     */
-
-    /**
-     * @typedef {Object} Anchor
-     * @property {number}  aPx  - Pixel position in pane A.
-     * @property {number}  bPx  - Pixel position in pane B.
-     * @property {boolean} [snap] - Mark as damping/snap target.
-     */
-
-    /**
-     * @typedef {Object} Segment
-     * @property {number} aPx - Pane A start (px).
-     * @property {number} bPx - Pane B start (px).
-     * @property {number} vPx - V-axis start (px).
-     * @property {number} aS  - Pane A segment length (px).
-     * @property {number} bS  - Pane B segment length (px).
-     * @property {number} vS  - V-axis segment length: max(aS, bS).
-     */
-
-    /**
-     * @typedef {Object} MapData
-     * @property {Segment[]} segments     - Ordered segments.
-     * @property {number}    vTotal       - Total v-axis length (px).
-     * @property {number[]}  snapVs       - V-axis positions of snap anchors (sorted).
-     * @property {number}    droppedCount - Anchors dropped due to non-monotonic bPx.
-     */
-
-    /**
-     * @typedef {Object} SyncOptions
-     * @property {function(): Anchor[]} getAnchors - Returns anchor array.
-     * @property {function} [onSync]      - Called after each sync update.
-     * @property {function(MapData)} [onMapBuilt] - Called on map rebuild.
-     * @property {number} [dampZonePx=80] - Damping radius around snap anchors (v-px). 0 = off.
-     * @property {number} [dampMin=0.15]  - Min damping factor at snap center (0–1).
-     * @property {number} [snapRangePx=40]  - Snap attraction range (v-px). 0 = off.
-     * @property {number} [snapDelayMs=200] - Idle time before snap engages (ms).
-     * @property {number} [snapOffsetPx=25] - Snap lands this many v-px *before* the anchor
-     *   (so the heading appears ~1–2 lines below the viewport top). 0 = land exactly on anchor.
-     * @property {function} [requestFrame] - Frame scheduler (default: requestAnimationFrame or setTimeout fallback).
-     * @property {function} [cancelFrame]  - Cancel a scheduled frame (default: cancelAnimationFrame or clearTimeout).
-     */
-
-    // ─── Core ───
-
-    /**
-     * Build a virtual-axis scroll map from anchors.
-     *
-     * @param {Anchor[]} anchors - Anchor points (0,0 and end are added automatically).
-     * @param {number} sMaxA - scrollHeight − clientHeight of pane A.
-     * @param {number} sMaxB - scrollHeight − clientHeight of pane B.
-     * @returns {MapData}
-     */
-    function buildMap(anchors, sMaxA, sMaxB) {
-      const sorted = anchors
-        .map(function (e) {
-          return {
-            aPx: Math.max(0, Math.min(sMaxA, Math.round(e.aPx))),
-            bPx: Math.max(0, Math.min(sMaxB, Math.round(e.bPx))),
-            snap: !!e.snap,
-          };
-        })
-        .sort(function (x, y) { return x.aPx - y.aPx; });
-
-      const pts = [{ aPx: 0, bPx: 0, snap: false }];
-      let lastB = 0;
-      let droppedCount = 0;
-      for (let i = 0; i < sorted.length; i++) {
-        const e = sorted[i];
-        if (e.bPx >= lastB && e.aPx > pts[pts.length - 1].aPx) {
-          pts.push(e);
-          lastB = e.bPx;
-        } else {
-          droppedCount++;
-        }
-      }
-      pts.push({ aPx: sMaxA, bPx: sMaxB, snap: false });
-
-      let vCum = 0;
-      const map = [];
-      const snapVs = [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const aS = pts[i + 1].aPx - pts[i].aPx;
-        const bS = pts[i + 1].bPx - pts[i].bPx;
-        const vS = Math.max(aS, bS);
-        map.push({
-          aPx: pts[i].aPx, bPx: pts[i].bPx, vPx: vCum,
-          aS: aS, bS: bS, vS: vS,
-        });
-        if (pts[i].snap) snapVs.push(vCum);
-        vCum += vS;
-      }
-
-      return { segments: map, vTotal: vCum, snapVs: snapVs, droppedCount: droppedCount };
-    }
-
-    /**
-     * Look up a position on one axis given a position on another.
-     * Binary search + linear interpolation within the segment.
-     *
-     * @param {Segment[]} segments - Segment array from buildMap.
-     * @param {string} from   - Source axis: 'aPx', 'bPx', or 'vPx'.
-     * @param {string} to     - Target axis: 'aPx', 'bPx', or 'vPx'.
-     * @param {number} value  - Position on source axis (px). Caller must clamp
-     *   to valid range; out-of-range values are extrapolated, not clamped.
-     * @returns {number} Position on target axis (px).
-     */
-    function lookup(segments, from, to, value) {
-      const fromS = from.charAt(0) + 'S';
-      const toS = to.charAt(0) + 'S';
-
-      let lo = 0, hi = segments.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (segments[mid][from] <= value) lo = mid;
-        else hi = mid - 1;
-      }
-
-      const seg = segments[lo];
-      if (seg[fromS] <= 0) return seg[to];
-      const t = (value - seg[from]) / seg[fromS];
-      return seg[to] + t * seg[toS];
-    }
-
-    // ─── Helpers (not exported) ───
-
-    function nearestSnap(snapVs, v) {
-      if (snapVs.length === 0) return null;
-      let lo = 0, hi = snapVs.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (snapVs[mid] < v) lo = mid + 1;
-        else hi = mid;
-      }
-      let best = snapVs[lo];
-      if (lo > 0 && Math.abs(snapVs[lo - 1] - v) < Math.abs(best - v)) {
-        best = snapVs[lo - 1];
-      }
-      return best;
-    }
-
-    function smoothstep(t) {
-      if (t <= 0) return 0;
-      if (t >= 1) return 1;
-      return t * t * (3 - 2 * t);
-    }
-
-    // ─── Controller ───
-
-    /**
-     * Synchronized scrolling controller for two scrollable elements.
-     *
-     * @example
-     * const sync = new DualScrollSync(editor, preview, {
-     *   getAnchors: function() { return headingAnchors(); },
-     *   dampZonePx: 80,     // slow down near headings
-     *   snapRangePx: 40,    // settle onto heading within 40px
-     * });
-     */
-    class DualScrollSync {
+    <footer>
+      <div>A: <span class="v" id="fa">0</span>px</div>
+      <div>B: <span class="v" id="fb">0</span>px</div>
+      <div>V: <span class="v" id="fv">0</span>px</div>
+    </footer>
+    <script>
+      // @@LIB-START@@
       /**
-       * @param {ScrollPane} paneA - First scrollable pane.
-       * @param {ScrollPane} paneB - Second scrollable pane.
-       * @param {SyncOptions} opts
+       * dual-scroll-sync v9
+       *
+       * Synchronized scrolling for two panes with different content heights.
+       *
+       * Each segment's virtual length is `vS = max(aS, bS)` — the pane with
+       * more content scrolls at normal speed; the other follows proportionally.
+       * Wheel input moves along the virtual axis in pixels: one notch moves
+       * the dominant pane exactly `deltaY` pixels, like normal browser scrolling.
+       *
+       * Optional features (independently disabled by setting to 0):
+       * - **Damping**: smoothstep deceleration near snap anchors.
+       * - **Snap**: settle to nearest snap anchor after wheel input stops.
+       *
+       * @module dual-scroll-sync
+       * @version 0.6.0
+       * @license MIT
        */
-      constructor(paneA, paneB, opts) {
-        this.paneA = paneA;
-        this.paneB = paneB;
-        this.getAnchors = opts.getAnchors;
-        this.onSync = opts.onSync || null;
-        this.onMapBuilt = opts.onMapBuilt || null;
-        this.dampZonePx = opts.dampZonePx ?? 80;
-        this.dampMin = opts.dampMin ?? 0.15;
-        this.snapRangePx = opts.snapRangePx ?? 40;
-        this.snapDelayMs = opts.snapDelayMs ?? 200;
-        this.snapOffsetPx = opts.snapOffsetPx ?? 25;
-        this.enabled = true;
 
-        const g = typeof globalThis !== 'undefined' ? globalThis : {};
-        this._requestFrame = opts.requestFrame || g.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
-        this._cancelFrame = opts.cancelFrame || g.cancelAnimationFrame || clearTimeout;
-
-        this._data = null;
-        this._dirty = true;
-        this._vCurrent = 0;
-        this._expectedA = null;
-        this._expectedB = null;
-        this._lock = null;
-        this._snapTimer = null;
-        this._snapRafId = null;
-
-        const self = this;
-        this._onScrollA = function () { self._handleScroll('a'); };
-        this._onScrollB = function () { self._handleScroll('b'); };
-        this._onWheel = function (e) { self._handleWheel(e); };
-
-        paneA.addEventListener('scroll', this._onScrollA);
-        paneB.addEventListener('scroll', this._onScrollB);
-        paneA.addEventListener('wheel', this._onWheel, { passive: false });
-        paneB.addEventListener('wheel', this._onWheel, { passive: false });
-      }
-
-      /** Mark the scroll map for rebuild on next access. */
-      invalidate() { this._dirty = true; }
+      // ─── Types ───
 
       /**
-       * Ensure the scroll map is current.
+       * @typedef {Object} ScrollPane
+       * @property {number} scrollTop   - Current scroll offset (read/write).
+       * @property {number} scrollHeight - Total content height (read-only).
+       * @property {number} clientHeight - Visible viewport height (read-only).
+       * @property {function} addEventListener
+       * @property {function} removeEventListener
+       */
+
+      /**
+       * @typedef {Object} Anchor
+       * @property {number}  aPx  - Pixel position in pane A.
+       * @property {number}  bPx  - Pixel position in pane B.
+       * @property {boolean} [snap] - Mark as damping/snap target.
+       */
+
+      /**
+       * @typedef {Object} Segment
+       * @property {number} aPx - Pane A start (px).
+       * @property {number} bPx - Pane B start (px).
+       * @property {number} vPx - V-axis start (px).
+       * @property {number} aS  - Pane A segment length (px).
+       * @property {number} bS  - Pane B segment length (px).
+       * @property {number} vS  - V-axis segment length: max(aS, bS).
+       */
+
+      /**
+       * @typedef {Object} MapData
+       * @property {Segment[]} segments     - Ordered segments.
+       * @property {number}    vTotal       - Total v-axis length (px).
+       * @property {number[]}  snapVs       - V-axis positions of snap anchors (sorted).
+       * @property {number}    droppedCount - Anchors dropped due to non-monotonic bPx.
+       */
+
+      /**
+       * @typedef {Object} SyncOptions
+       * @property {function(): Anchor[]} getAnchors - Returns anchor array.
+       * @property {function} [onSync]      - Called after each sync update.
+       * @property {function(MapData)} [onMapBuilt] - Called on map rebuild.
+       * @property {number} [dampZonePx=80] - Damping radius around snap anchors (v-px). 0 = off.
+       * @property {number} [dampMin=0.15]  - Min damping factor at snap center (0–1).
+       * @property {number} [snapRangePx=40]  - Snap attraction range (v-px). 0 = off.
+       * @property {number} [snapDelayMs=200] - Idle time before snap engages (ms).
+       * @property {number} [snapOffsetPx=25] - Snap lands this many v-px *before* the anchor
+       *   (so the heading appears ~1–2 lines below the viewport top). 0 = land exactly on anchor.
+       * @property {number} [wheelSmooth=0.3] - Interpolation factor for wheel input (0–1).
+       *   Each animation frame drains this fraction of the remaining delta.
+       *   1 = instant (no smoothing). 0 = frozen. Typical range: 0.2–0.5.
+       * @property {function} [requestFrame] - Frame scheduler (default: requestAnimationFrame or setTimeout fallback).
+       * @property {function} [cancelFrame]  - Cancel a scheduled frame (default: cancelAnimationFrame or clearTimeout).
+       */
+
+      // ─── Core ───
+
+      /**
+       * Build a virtual-axis scroll map from anchors.
+       *
+       * @param {Anchor[]} anchors - Anchor points (0,0 and end are added automatically).
+       * @param {number} sMaxA - scrollHeight − clientHeight of pane A.
+       * @param {number} sMaxB - scrollHeight − clientHeight of pane B.
        * @returns {MapData}
        */
-      ensureMap() {
-        if (this._dirty || !this._data) {
-          const sA = Math.max(0, this.paneA.scrollHeight - this.paneA.clientHeight);
-          const sB = Math.max(0, this.paneB.scrollHeight - this.paneB.clientHeight);
-          try {
-            this._data = buildMap(this.getAnchors(), sA, sB);
-          } catch (e) {
-            this._data = { segments: [], vTotal: 0, snapVs: [] };
-          }
-          this._dirty = false;
-          if (this.onMapBuilt) this.onMapBuilt(this._data);
-        }
-        return this._data;
-      }
-
-      /** Remove all event listeners and timers. */
-      destroy() {
-        this._cancelSnap();
-        this.paneA.removeEventListener('scroll', this._onScrollA);
-        this.paneB.removeEventListener('scroll', this._onScrollB);
-        this.paneA.removeEventListener('wheel', this._onWheel);
-        this.paneB.removeEventListener('wheel', this._onWheel);
-      }
-
-      /** @private Set both panes from _vCurrent. */
-      _applyV() {
-        const segs = this._data.segments;
-        this._lock = 'a';
-        this.paneA.scrollTop = lookup(segs, 'vPx', 'aPx', this._vCurrent);
-        this.paneB.scrollTop = lookup(segs, 'vPx', 'bPx', this._vCurrent);
-        this._expectedA = this.paneA.scrollTop;
-        this._expectedB = this.paneB.scrollTop;
-        this._lock = null;
-        if (this.onSync) this.onSync();
-      }
-
-      /** @private */
-      _handleScroll(source) {
-        if (!this.enabled) return;
-
-        if (source === 'a' && this._expectedA !== null) {
-          if (Math.abs(this.paneA.scrollTop - this._expectedA) < 2) {
-            this._expectedA = null;
-            return;
-          }
-          this._expectedA = null;
-        }
-        if (source === 'b' && this._expectedB !== null) {
-          if (Math.abs(this.paneB.scrollTop - this._expectedB) < 2) {
-            this._expectedB = null;
-            return;
-          }
-          this._expectedB = null;
-        }
-
-        if (this._lock && this._lock !== source) return;
-
-        // User-initiated scroll (not echo) → cancel any snap in progress
-        this._cancelSnap();
-
-        const d = this.ensureMap();
-        const segs = d.segments;
-
-        if (source === 'a') {
-          this._vCurrent = lookup(segs, 'aPx', 'vPx', this.paneA.scrollTop);
-          this.paneB.scrollTop = lookup(segs, 'vPx', 'bPx', this._vCurrent);
-          this._expectedB = this.paneB.scrollTop;
-        } else {
-          this._vCurrent = lookup(segs, 'bPx', 'vPx', this.paneB.scrollTop);
-          this.paneA.scrollTop = lookup(segs, 'vPx', 'aPx', this._vCurrent);
-          this._expectedA = this.paneA.scrollTop;
-        }
-        if (this.onSync) this.onSync();
-      }
-
-      /** @private */
-      _handleWheel(e) {
-        if (!this.enabled || e.shiftKey || e.ctrlKey || e.metaKey) return;
-        if (e.deltaX !== 0 && e.deltaY === 0) return;
-        e.preventDefault();
-
-        const d = this.ensureMap();
-        let delta = e.deltaY;
-
-        // Damping near snap anchors (offset applied so damping zone centers on landing position)
-        if (this.dampZonePx > 0 && d.snapVs.length > 0) {
-          const off = this.snapOffsetPx;
-          const snap = nearestSnap(d.snapVs, this._vCurrent + off);
-          if (snap !== null) {
-            const target = Math.max(0, snap - off);
-            const dist = Math.abs(this._vCurrent - target);
-            if (dist < this.dampZonePx) {
-              delta *= this.dampMin + (1 - this.dampMin) * smoothstep(dist / this.dampZonePx);
-            }
-          }
-        }
-
-        this._vCurrent = Math.max(0, Math.min(d.vTotal, this._vCurrent + delta));
-        this._applyV();
-        this._scheduleSnap();
-      }
-
-      /**
-       * Cancel any pending snap timer or animation.
-       * @private
-       */
-      _cancelSnap() {
-        if (this._snapTimer) { clearTimeout(this._snapTimer); this._snapTimer = null; }
-        if (this._snapRafId) { this._cancelFrame(this._snapRafId); this._snapRafId = null; }
-      }
-
-      /**
-       * Schedule a snap to the nearest anchor after wheel inactivity.
-       * Re-reads map and options at execution time (no stale closures).
-       * @private
-       */
-      _scheduleSnap() {
-        this._cancelSnap();
-        if (this.snapRangePx <= 0) return;
-
-        const self = this;
-        this._snapTimer = setTimeout(function () {
-          self._snapTimer = null;
-          const d = self.ensureMap();
-          if (d.snapVs.length === 0) return;
-
-          const off = self.snapOffsetPx;
-          const snap = nearestSnap(d.snapVs, self._vCurrent + off);
-          if (snap === null) return;
-          const target = Math.max(0, snap - off);
-          if (Math.abs(target - self._vCurrent) > self.snapRangePx) return;
-
-          const steps = 8;
-          let count = 0;
-          const startV = self._vCurrent;
-          (function frame() {
-            count++;
-            const t = smoothstep(count / steps);
-            self._vCurrent = startV + (target - startV) * t;
-            self._applyV();
-            if (count < steps) {
-              self._snapRafId = self._requestFrame(frame);
-            } else {
-              self._snapRafId = null;
-            }
-          })();
-        }, this.snapDelayMs);
-      }
-    }
-
-
-
-    // === Markdown Parser ===
-
-    function parseMd(src) {
-      const blocks = [];
-      let html = src.replace(/```(\w*)\n([\s\S]*?)```/g, function (_, lang, code) {
-        const i = blocks.length;
-        blocks.push('<pre data-block><code>' + esc(code.trim()) + '</code></pre>');
-        return '\x00B' + i + '\x00';
-      });
-      html = esc(html);
-      html = html.replace(/^### (.+)$/gm, '<h3 data-heading>$1</h3>');
-      html = html.replace(/^## (.+)$/gm, '<h2 data-heading>$1</h2>');
-      html = html.replace(/^# (.+)$/gm, '<h1 data-heading>$1</h1>');
-      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-      html = html.replace(/^---$/gm, '<hr data-block>');
-      html = html.replace(/^&gt; (.+)$/gm, '<blockquote data-block>$1</blockquote>');
-      html = html.replace(/^(\|.+\|)\n(\|[\s\-:|]+\|)\n((?:\|.+\|\n?)+)/gm, function (m, hdr, sep, body) {
-        const hs = hdr.split('|').filter(function (c) { return c.trim(); });
-        const rs = body.trim().split('\n').map(function (r) { return r.split('|').filter(function (c) { return c.trim(); }); });
-        let o = '<table data-block><thead><tr>' + hs.map(function (h) { return '<th>' + h.trim() + '</th>'; }).join('') + '</tr></thead><tbody>';
-        rs.forEach(function (r) { o += '<tr>' + r.map(function (c) { return '<td>' + c.trim() + '</td>'; }).join('') + '</tr>'; });
-        return o + '</tbody></table>';
-      });
-      html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-      html = html.replace(/(<li>[\s\S]*?<\/li>(\s*<li>[\s\S]*?<\/li>)*)/g, '<ul data-block>$1</ul>');
-      html = html.split('\n').map(function (l) {
-        const t = l.trim();
-        if (!t || /^</.test(t) || t.indexOf('\x00B') === 0) return t;
-        return '<p data-block>' + t + '</p>';
-      }).join('\n');
-      html = html.replace(/\x00B(\d+)\x00/g, function (_, i) { return blocks[+i]; });
-      return html;
-    }
-    function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
-    // === Anchor computation (px-based) ===
-
-    function getAnchors(edPane, pvPane, edEl, pvEl) {
-      const text = edEl.textContent;
-      const lines = text.split('\n');
-      const headings = pvEl.querySelectorAll('[data-heading]');
-
-      const edRect = edPane.getBoundingClientRect();
-      const pvRect = pvPane.getBoundingClientRect();
-
-      // TreeWalker for editor char → Y
-      const walker = document.createTreeWalker(edEl, NodeFilter.SHOW_TEXT);
-      const nmap = []; let nd, off = 0;
-      while ((nd = walker.nextNode())) {
-        nmap.push({ n: nd, s: off, e: off + nd.length });
-        off += nd.length;
-      }
-
-      function charY(cp) {
-        for (let i = 0; i < nmap.length; i++) {
-          if (cp >= nmap[i].s && cp < nmap[i].e) {
-            const r = document.createRange();
-            const lo = cp - nmap[i].s;
-            r.setStart(nmap[i].n, lo);
-            r.setEnd(nmap[i].n, Math.min(lo + 1, nmap[i].n.length));
-            return r.getBoundingClientRect().top - edRect.top + edPane.scrollTop;
-          }
-        }
-        return edPane.scrollHeight;
-      }
-
-      function elemY(el) {
-        return el.getBoundingClientRect().top - pvRect.top + pvPane.scrollTop;
-      }
-
-      const anchors = [];
-
-      // Heading anchors
-      let hIdx = 0;
-      let cp = 0;
-      for (let i = 0; i < lines.length; i++) {
-        if (/^#{1,3}\s/.test(lines[i]) && hIdx < headings.length) {
-          anchors.push({
-            aPx: Math.round(charY(cp)),
-            bPx: Math.round(elemY(headings[hIdx])),
-            snap: true,
+      function buildMap(anchors, sMaxA, sMaxB) {
+        const sorted = anchors
+          .map(function (e) {
+            return {
+              aPx: Math.max(0, Math.min(sMaxA, Math.round(e.aPx))),
+              bPx: Math.max(0, Math.min(sMaxB, Math.round(e.bPx))),
+              snap: !!e.snap,
+            };
+          })
+          .sort(function (x, y) {
+            return x.aPx - y.aPx;
           });
-          hIdx++;
-        }
-        cp += lines[i].length + 1;
-      }
 
-      // Block-level anchors (table, pre) for density in sparse regions
-      const blocks = pvEl.querySelectorAll('table[data-block], pre[data-block]');
-      for (let j = 0; j < blocks.length; j++) {
-        const block = blocks[j];
-        const bTop = Math.round(elemY(block));
-        const bBot = Math.round(elemY(block) + block.offsetHeight);
-
-        // Find editor position by matching content
-        const snippet = block.textContent.substring(0, 40).trim();
-        if (!snippet) continue;
-        let idx = text.indexOf(snippet);
-        if (idx < 0) continue;
-
-        // Back up to block start
-        if (block.tagName === 'TABLE') {
-          while (idx > 0 && text[idx - 1] !== '\n') idx--;
-        } else if (block.tagName === 'PRE') {
-          const fence = text.lastIndexOf('```', idx);
-          if (fence >= 0 && idx - fence < 200) idx = fence;
-        }
-
-        const aTop = Math.round(charY(idx));
-
-        // Estimate editor bottom: find end of contiguous block source
-        let endIdx = idx;
-        if (block.tagName === 'TABLE') {
-          let nl = idx;
-          while (nl < text.length) {
-            const next = text.indexOf('\n', nl + 1);
-            if (next < 0) { nl = text.length; break; }
-            const nextLine = text.substring(nl + 1, next).trim();
-            if (!nextLine.startsWith('|')) { nl = next; break; }
-            nl = next;
+        const pts = [{ aPx: 0, bPx: 0, snap: false }];
+        let lastB = 0;
+        let droppedCount = 0;
+        for (let i = 0; i < sorted.length; i++) {
+          const e = sorted[i];
+          if (e.bPx >= lastB && e.aPx > pts[pts.length - 1].aPx) {
+            pts.push(e);
+            lastB = e.bPx;
+          } else {
+            droppedCount++;
           }
-          endIdx = nl;
-        } else if (block.tagName === 'PRE') {
-          const close = text.indexOf('```', idx + 3);
-          endIdx = close >= 0 ? close + 3 : idx + 100;
         }
-        const aBot = Math.round(charY(Math.min(text.length - 1, endIdx)));
+        pts.push({ aPx: sMaxA, bPx: sMaxB, snap: false });
 
-        anchors.push({ aPx: aTop, bPx: bTop });
-        if (bBot - bTop > 50) {
-          anchors.push({ aPx: aBot, bPx: bBot });
+        let vCum = 0;
+        const map = [];
+        const snapVs = [];
+        for (let i = 0; i < pts.length - 1; i++) {
+          const aS = pts[i + 1].aPx - pts[i].aPx;
+          const bS = pts[i + 1].bPx - pts[i].bPx;
+          const vS = Math.max(aS, bS);
+          map.push({
+            aPx: pts[i].aPx,
+            bPx: pts[i].bPx,
+            vPx: vCum,
+            aS: aS,
+            bS: bS,
+            vS: vS,
+          });
+          if (pts[i].snap) snapVs.push(vCum);
+          vCum += vS;
+        }
+
+        return {
+          segments: map,
+          vTotal: vCum,
+          snapVs: snapVs,
+          droppedCount: droppedCount,
+        };
+      }
+
+      /**
+       * Look up a position on one axis given a position on another.
+       * Binary search + linear interpolation within the segment.
+       *
+       * @param {Segment[]} segments - Segment array from buildMap.
+       * @param {string} from   - Source axis: 'aPx', 'bPx', or 'vPx'.
+       * @param {string} to     - Target axis: 'aPx', 'bPx', or 'vPx'.
+       * @param {number} value  - Position on source axis (px). Caller must clamp
+       *   to valid range; out-of-range values are extrapolated, not clamped.
+       * @returns {number} Position on target axis (px).
+       */
+      function lookup(segments, from, to, value) {
+        const fromS = from.charAt(0) + "S";
+        const toS = to.charAt(0) + "S";
+
+        let lo = 0,
+          hi = segments.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (segments[mid][from] <= value) lo = mid;
+          else hi = mid - 1;
+        }
+
+        const seg = segments[lo];
+        if (seg[fromS] <= 0) return seg[to];
+        const t = (value - seg[from]) / seg[fromS];
+        return seg[to] + t * seg[toS];
+      }
+
+      // ─── Helpers (not exported) ───
+
+      function nearestSnap(snapVs, v) {
+        if (snapVs.length === 0) return null;
+        let lo = 0,
+          hi = snapVs.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (snapVs[mid] < v) lo = mid + 1;
+          else hi = mid;
+        }
+        let best = snapVs[lo];
+        if (lo > 0 && Math.abs(snapVs[lo - 1] - v) < Math.abs(best - v)) {
+          best = snapVs[lo - 1];
+        }
+        return best;
+      }
+
+      function smoothstep(t) {
+        if (t <= 0) return 0;
+        if (t >= 1) return 1;
+        return t * t * (3 - 2 * t);
+      }
+
+      // ─── Controller ───
+
+      /**
+       * Synchronized scrolling controller for two scrollable elements.
+       *
+       * @example
+       * const sync = new DualScrollSync(editor, preview, {
+       *   getAnchors: function() { return headingAnchors(); },
+       *   dampZonePx: 80,     // slow down near headings
+       *   snapRangePx: 40,    // settle onto heading within 40px
+       * });
+       */
+      class DualScrollSync {
+        /**
+         * @param {ScrollPane} paneA - First scrollable pane.
+         * @param {ScrollPane} paneB - Second scrollable pane.
+         * @param {SyncOptions} opts
+         */
+        constructor(paneA, paneB, opts) {
+          this.paneA = paneA;
+          this.paneB = paneB;
+          this.getAnchors = opts.getAnchors;
+          this.onSync = opts.onSync || null;
+          this.onMapBuilt = opts.onMapBuilt || null;
+          this.dampZonePx = opts.dampZonePx ?? 80;
+          this.dampMin = opts.dampMin ?? 0.15;
+          this.snapRangePx = opts.snapRangePx ?? 200;
+          this.snapDelayMs = opts.snapDelayMs ?? 200;
+          this.snapOffsetPx = opts.snapOffsetPx ?? 25;
+          this.wheelSmooth = opts.wheelSmooth ?? 0.05;
+          this.enabled = true;
+
+          const g = typeof globalThis !== "undefined" ? globalThis : {};
+          this._requestFrame =
+            opts.requestFrame ||
+            g.requestAnimationFrame ||
+            function (fn) {
+              return setTimeout(fn, 16);
+            };
+          this._cancelFrame =
+            opts.cancelFrame || g.cancelAnimationFrame || clearTimeout;
+
+          this._data = null;
+          this._dirty = true;
+          this._vCurrent = 0;
+          this._expectedA = null;
+          this._expectedB = null;
+          this._lock = null;
+          this._snapTimer = null;
+          this._snapRafId = null;
+          this._wheelRemaining = 0;
+          this._wheelPumping = false;
+
+          const self = this;
+          this._onScrollA = function () {
+            self._handleScroll("a");
+          };
+          this._onScrollB = function () {
+            self._handleScroll("b");
+          };
+          this._onWheel = function (e) {
+            self._onWheelEvent(e);
+          };
+
+          paneA.addEventListener("scroll", this._onScrollA);
+          paneB.addEventListener("scroll", this._onScrollB);
+          paneA.addEventListener("wheel", this._onWheel, { passive: false });
+          paneB.addEventListener("wheel", this._onWheel, { passive: false });
+        }
+
+        /** Mark the scroll map for rebuild on next access. */
+        invalidate() {
+          this._dirty = true;
+        }
+
+        /**
+         * Ensure the scroll map is current.
+         * @returns {MapData}
+         */
+        ensureMap() {
+          if (this._dirty || !this._data) {
+            const sA = Math.max(
+              0,
+              this.paneA.scrollHeight - this.paneA.clientHeight,
+            );
+            const sB = Math.max(
+              0,
+              this.paneB.scrollHeight - this.paneB.clientHeight,
+            );
+            try {
+              this._data = buildMap(this.getAnchors(), sA, sB);
+            } catch (e) {
+              this._data = { segments: [], vTotal: 0, snapVs: [] };
+            }
+            this._dirty = false;
+            if (this.onMapBuilt) this.onMapBuilt(this._data);
+          }
+          return this._data;
+        }
+
+        /** Remove all event listeners and timers. */
+        destroy() {
+          this._cancelSnap();
+          this._wheelRemaining = 0;
+          this.paneA.removeEventListener("scroll", this._onScrollA);
+          this.paneB.removeEventListener("scroll", this._onScrollB);
+          this.paneA.removeEventListener("wheel", this._onWheel);
+          this.paneB.removeEventListener("wheel", this._onWheel);
+        }
+
+        /** @private Set both panes from _vCurrent. */
+        _applyV() {
+          const segs = this._data.segments;
+          this._lock = "a";
+          this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
+          this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
+          this._expectedA = this.paneA.scrollTop;
+          this._expectedB = this.paneB.scrollTop;
+          this._lock = null;
+          if (this.onSync) this.onSync();
+        }
+
+        /** @private */
+        _handleScroll(source) {
+          if (!this.enabled) return;
+
+          if (source === "a" && this._expectedA !== null) {
+            if (Math.abs(this.paneA.scrollTop - this._expectedA) < 2) {
+              this._expectedA = null;
+              return;
+            }
+            this._expectedA = null;
+          }
+          if (source === "b" && this._expectedB !== null) {
+            if (Math.abs(this.paneB.scrollTop - this._expectedB) < 2) {
+              this._expectedB = null;
+              return;
+            }
+            this._expectedB = null;
+          }
+
+          if (this._lock && this._lock !== source) return;
+
+          // User-initiated scroll (not echo) → cancel any snap in progress
+          this._cancelSnap();
+
+          const d = this.ensureMap();
+          const segs = d.segments;
+
+          if (source === "a") {
+            this._vCurrent = lookup(segs, "aPx", "vPx", this.paneA.scrollTop);
+            this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
+            this._expectedB = this.paneB.scrollTop;
+          } else {
+            this._vCurrent = lookup(segs, "bPx", "vPx", this.paneB.scrollTop);
+            this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
+            this._expectedA = this.paneA.scrollTop;
+          }
+          if (this.onSync) this.onSync();
+        }
+
+        /** @private Guard checks + preventDefault, then dispatch delta (immediate or buffered). */
+        _onWheelEvent(e) {
+          if (!this.enabled || e.shiftKey || e.ctrlKey || e.metaKey) return;
+          if (e.deltaX !== 0 && e.deltaY === 0) return;
+          e.preventDefault();
+          if (this.wheelSmooth >= 1) {
+            this._handleWheel(e.deltaY);
+            this._scheduleSnap();
+            return;
+          }
+          this._wheelRemaining += e.deltaY;
+          if (!this._wheelPumping) this._pumpWheel();
+        }
+
+        /** @private rAF drain loop: drains _wheelRemaining one frame at a time. */
+        _pumpWheel() {
+          this._wheelPumping = true;
+          const self = this;
+          const rf = this._requestFrame;
+          (function loop() {
+            rf(function () {
+              const delta = self._wheelRemaining * self.wheelSmooth;
+              self._wheelRemaining -= delta;
+              self._handleWheel(delta);
+              if (Math.abs(self._wheelRemaining) >= 0.5) loop();
+              else {
+                self._wheelPumping = false;
+                self._scheduleSnap();
+              }
+            });
+          })();
+        }
+
+        /** @private Processing layer: apply delta through damping, update vCurrent, sync panes. */
+        _handleWheel(delta) {
+          const d = this.ensureMap();
+
+          // Damping near snap anchors
+          if (this.dampZonePx > 0 && d.snapVs.length > 0) {
+            const off = this.snapOffsetPx;
+            const snap = nearestSnap(d.snapVs, this._vCurrent + off);
+            if (snap !== null) {
+              const target = Math.max(0, snap - off);
+              const dist = Math.abs(this._vCurrent - target);
+              if (dist < this.dampZonePx) {
+                delta *=
+                  this.dampMin +
+                  (1 - this.dampMin) * smoothstep(dist / this.dampZonePx);
+              }
+            }
+          }
+
+          this._vCurrent = Math.max(
+            0,
+            Math.min(d.vTotal, this._vCurrent + delta),
+          );
+          this._applyV();
+        }
+
+        /**
+         * Cancel any pending snap timer or animation.
+         * @private
+         */
+        _cancelSnap() {
+          if (this._snapTimer) {
+            clearTimeout(this._snapTimer);
+            this._snapTimer = null;
+          }
+          if (this._snapRafId) {
+            this._cancelFrame(this._snapRafId);
+            this._snapRafId = null;
+          }
+        }
+
+        /**
+         * Schedule a snap to the nearest anchor after wheel inactivity.
+         * Re-reads map and options at execution time (no stale closures).
+         * @private
+         */
+        _scheduleSnap() {
+          this._cancelSnap();
+          if (this.snapRangePx <= 0) return;
+
+          const self = this;
+          this._snapTimer = setTimeout(function () {
+            self._snapTimer = null;
+            const d = self.ensureMap();
+            if (d.snapVs.length === 0) return;
+
+            const off = self.snapOffsetPx;
+            const snap = nearestSnap(d.snapVs, self._vCurrent + off);
+            if (snap === null) return;
+            const target = Math.max(0, snap - off);
+            if (Math.abs(target - self._vCurrent) > self.snapRangePx) return;
+
+            const steps = 8;
+            let count = 0;
+            const startV = self._vCurrent;
+            (function frame() {
+              count++;
+              const t = smoothstep(count / steps);
+              self._vCurrent = startV + (target - startV) * t;
+              self._applyV();
+              if (count < steps) {
+                self._snapRafId = self._requestFrame(frame);
+              } else {
+                self._snapRafId = null;
+              }
+            })();
+          }, this.snapDelayMs);
         }
       }
 
-      return anchors;
-    }
+      // @@LIB-END@@
 
-    // === Sample MD ===
+      // === Markdown Parser ===
 
-    const SAMPLE = [
-      "# System Architecture Document",
-      "",
-      "This document describes a distributed data processing platform. It includes large tables, ASCII diagrams, code blocks, and dense content to stress-test scroll synchronization.",
-      "",
-      "## 1. System Overview",
-      "",
-      "The platform consists of five subsystems: ingestion, processing, storage, query, and monitoring. Each runs as an independent service cluster.",
-      "",
-      "Data flows from external sources through ingestion, gets transformed in processing, persisted in storage, and made available through the query layer.",
-      "",
-      "### 1.1 Component Diagram",
-      "",
-      "```",
-      "+-------------------+     +--------------------+     +------------------+",
-      "|                   |     |                    |     |                  |",
-      "|   Data Sources    +---->+   Ingestion Layer  +---->+  Message Queue   |",
-      "|                   |     |                    |     |                  |",
-      "| - REST APIs       |     | - Rate limiting    |     | - Partitioned    |",
-      "| - Webhooks        |     | - Schema validate  |     | - Replicated     |",
-      "| - File uploads    |     | - Deduplication    |     | - Ordered        |",
-      "| - Stream feeds    |     | - Format normalize |     | - Persistent     |",
-      "|                   |     |                    |     |                  |",
-      "+-------------------+     +--------------------+     +--------+---------+",
-      "                                                              |",
-      "                                                              v",
-      "+-------------------+     +--------------------+     +--------+---------+",
-      "|                   |     |                    |     |                  |",
-      "|   Query Engine    +<----+   Storage Layer    +<----+  Processing     |",
-      "|                   |     |                    |     |                  |",
-      "| - SQL interface   |     | - Time-series DB   |     | - Stream proc   |",
-      "| - GraphQL API     |     | - Document store   |     | - Batch proc    |",
-      "| - Caching layer   |     | - Object storage   |     | - ML pipeline   |",
-      "| - Access control  |     | - Search index     |     | - Aggregation   |",
-      "|                   |     |                    |     |                  |",
-      "+-------------------+     +--------------------+     +------------------+",
-      "```",
-      "",
-      "### 1.2 Technology Stack",
-      "",
-      "| Layer | Technology | Version | Purpose | Scaling Model | SLA |",
-      "|-------|-----------|---------|---------|--------------|-----|",
-      "| Ingestion | Go microservices | 1.21 | HTTP/gRPC endpoints with validation and rate limiting per API key | Horizontal auto-scale 3-50 instances based on request rate | 99.99% uptime p99 < 50ms |",
-      "| Queue | Apache Kafka | 3.6 | Durable message transport with exactly-once semantics and partition-level ordering guarantees | Fixed partition count with consumer group rebalancing on failure | Zero message loss, < 100ms e2e |",
-      "| Processing | Apache Flink | 1.18 | Stream processing with event-time windows, watermarks, and exactly-once state snapshots | Task-level parallelism with automatic checkpoint recovery and rescaling | Lag < 5s at 1M events/sec |",
-      "| Storage | PostgreSQL + S3 | 16.1 | Hot data in PG with auto-partitioning, cold data in S3 Parquet with lifecycle policies | Vertical for PG, horizontal for S3, read replicas for analytics | RPO < 1min, RTO < 5min |",
-      "| Query | Trino | 433 | Federated SQL across PG, S3, and ES with cost-based optimizer and predicate pushdown | Worker auto-scale on queue depth, spot instances for batch workloads | p95 < 10s for dashboards |",
-      "| Search | Elasticsearch | 8.11 | Full-text search, log analytics, metric aggregation with cross-cluster replication | Index-level sharding with automatic rebalancing across data nodes | p99 < 200ms, index lag < 30s |",
-      "| Cache | Redis Cluster | 7.2 | Query caching, session storage, rate counters with hash-slot sharding and sentinel HA | Auto-failover < 10s, LRU eviction with configurable maxmemory policies | Hit ratio > 85% |",
-      "| Monitor | Prometheus | 2.48 | Metrics collection, alerting rules, long-term storage via Thanos sidecar and compactor | Federation across clusters with hierarchical recording rules | Scrape 15s, alert eval 30s |",
-      "",
-      "## 2. Data Processing Pipeline",
-      "",
-      "The processing layer transforms raw events into enriched, aggregated data products.",
-      "",
-      "### 2.1 Stream Processing Flow",
-      "",
-      "```",
-      "Kafka: raw-events",
-      "    |",
-      "    v",
-      "[Deserialize] --> [Validate] --> [Enrich]",
-      "                                    |",
-      "                    +---------------+---------------+",
-      "                    |               |               |",
-      "                    v               v               v",
-      "             [1-min window]  [5-min window]  [Session window]",
-      "                    |               |               |",
-      "                    v               v               v",
-      "             [Sink: PG]      [Sink: ES]      [Sink: S3]",
-      "```",
-      "",
-      "### 2.2 Enrichment Rules",
-      "",
-      "| Rule | Input | Lookup Source | Output | Cache TTL | Fallback |",
-      "|------|-------|-------------|--------|-----------|----------|",
-      "| Geo-IP | source_ip | MaxMind GeoIP2 database updated weekly with city-level accuracy and confidence scoring for 99.8% of IPv4 and 95% of IPv6 addresses | geo_country, geo_city, geo_lat, geo_lon, geo_accuracy | 24h in Redis keyed by /24 subnet, bulk refresh on DB update | Last known location or unknown with low confidence |",
-      "| User Agent | ua_string | Custom pattern library with 15,000 rules covering browsers, bots, mobile apps, IoT devices, and embedded webviews across all major platforms | device_type, browser, browser_ver, os, os_ver, is_bot, is_crawler | 1h keyed by MD5(ua_string), ~2M unique entries in steady state | Basic regex parse, mark unrecognized |",
-      "| Company | email_domain | Clearbit API + local PG cache of 2M+ company records with industry classification, employee count ranges, revenue estimates, and tech stack | company_name, industry, size_range, revenue_range, tech_stack[] | 30d in PG, API fallback on miss with exponential backoff and circuit breaker | Skip enrichment, mark unresolved |",
-      "| Threat | source_ip, url | AbuseIPDB + VirusTotal + internal blocklist aggregated from 12 threat intelligence feeds with daily reconciliation and deduplication | threat_score 0-100, categories[], is_malicious, first_seen, report_count | 6h for IP, 24h for URL, with background refresh for high-threat entries | Neutral score 50, flag for review |",
-      "| Revenue | user_id | Internal billing system with real-time subscription status, historical MRR, expansion/contraction tracking, and churn risk scoring | plan_tier, mrr_cents, lifetime_value, churn_risk, last_activity | 5min for active users, 1h for inactive, invalidated on billing events | Lookup from daily snapshot table |",
-      "",
-      "## 3. Database Schema",
-      "",
-      "### 3.1 Events Table (Hot Storage)",
-      "",
-      "```sql",
-      "CREATE TABLE events (",
-      "    id              BIGINT GENERATED ALWAYS AS IDENTITY,",
-      "    event_id        UUID NOT NULL DEFAULT gen_random_uuid(),",
-      "    received_at     TIMESTAMPTZ NOT NULL DEFAULT now(),",
-      "    event_type      TEXT NOT NULL,",
-      "    source          TEXT NOT NULL,",
-      "    payload         JSONB NOT NULL,",
-      "    geo_country     TEXT,",
-      "    geo_city        TEXT,",
-      "    device_type     TEXT,",
-      "    threat_score    SMALLINT DEFAULT 0,",
-      "    PRIMARY KEY (id, received_at)",
-      ") PARTITION BY RANGE (received_at);",
-      "CREATE INDEX idx_events_type ON events (event_type, received_at);",
-      "CREATE INDEX idx_events_source ON events (source, received_at);",
-      "```",
-      "",
-      "### 3.2 Data Lifecycle",
-      "",
-      "| Age | Storage | Format | Compression | Access Pattern | Retention Policy |",
-      "|-----|---------|--------|------------|---------------|-----------------|",
-      "| 0-7d | PostgreSQL NVMe SSD, 3-node HA with sync replication and daily PITR backups to S3 | Row-based with TOAST for JSONB, daily partitions | LZ4 for TOAST columns, zstd for WAL | Point lookups < 1ms, range scans < 50ms | Always hot, 4h backup cycle |",
-      "| 7-90d | S3 Standard with cross-region replication, versioning, and integrity checksums | Apache Parquet with Snappy compression, partitioned by date/type/source | Snappy block compression ~3:1, dictionary encoding for strings | Trino federated queries, typical latency 5-30s | On-demand via Trino |",
-      "| 90d-1y | S3 Infrequent Access with lifecycle transition, integrity audit monthly | Parquet with zstd compression, yearly partitions merged from daily files | Zstandard level 3 ~5:1 ratio | Quarterly compliance reports, incident investigation | Available within 12h |",
-      "| 1y+ | Glacier Deep Archive with vault lock for immutability, cross-account backup | ORC format with maximum compression, yearly archives | Zstandard level 19 ~15:1 for event data | Annual audit and regulatory compliance | 48h retrieval |",
-      "",
-      "## 4. Monitoring Dashboard",
-      "",
-      "```",
-      "+================================================================+",
-      "|  PLATFORM HEALTH                     2024-01-15 14:30 UTC      |",
-      "+================================================================+",
-      "|  Ingestion    [================----]  847K/min  (85% capacity) |",
-      "|  Proc. Lag    [==------------------]  2.1 sec   (OK)           |",
-      "|  Queue        [====----------------]  1.2M msgs (20% depth)    |",
-      "|  Storage      [============--------]  14.2 TB   (60% used)     |",
-      "|  Query p95    [======--------------]  3.2 sec   (within SLA)   |",
-      "|  Errors       [=-------------------]  0.02%     (nominal)      |",
-      "|  Cache Hit    [=================---]  89%       (target: 85%)  |",
-      "+================================================================+",
-      "```",
-      "",
-      "### 4.1 Alert Configuration",
-      "",
-      "| Alert | Condition | Severity | Action |",
-      "|-------|----------|----------|--------|",
-      "| Error spike | error_rate > 1% sustained for 5 minutes across all ingestion pods | Critical / PagerDuty | Auto-scale ingestion +50%, page on-call |",
-      "| Processing lag | flink_watermark_lag > 30s on any operator in the main pipeline | Warning / Slack | Increase parallelism, trigger savepoint |",
-      "| Disk pressure | pg_data_usage > 80% on any node including WAL and temp files | Warning / Slack | Emergency partition cleanup, alert DBA |",
-      "| Replication lag | pg_replication_lag > 10s on any replica measured by WAL LSN delta | Critical / PagerDuty | Pause read traffic to lagging replica |",
-      "",
-      "## 5. Infrastructure Layout",
-      "",
-      "```",
-      "Region: us-east-1",
-      "|",
-      "+-- AZ-a",
-      "|   +-- k8s-node-01 (m5.4xl) : ingestion x4, processing x2",
-      "|   +-- k8s-node-02 (m5.4xl) : ingestion x4, query x2",
-      "|   +-- pg-primary  (r6g.2xl) : PostgreSQL primary (sync)",
-      "|   +-- redis-01    (r6g.xl)  : slots 0-5460",
-      "|   +-- kafka-01    (m5.2xl)  : broker 1, partitions 0-99",
-      "|",
-      "+-- AZ-b",
-      "|   +-- k8s-node-03 (m5.4xl) : ingestion x4, processing x2",
-      "|   +-- k8s-node-04 (m5.4xl) : query x4",
-      "|   +-- pg-replica-1 (r6g.2xl) : sync replica",
-      "|   +-- redis-02    (r6g.xl)  : slots 5461-10922",
-      "|   +-- kafka-02    (m5.2xl)  : broker 2",
-      "|",
-      "+-- AZ-c",
-      "    +-- k8s-node-05 (m5.4xl) : processing x4, monitoring",
-      "    +-- pg-replica-2 (r6g.2xl) : async replica (analytics)",
-      "    +-- redis-03    (r6g.xl)  : slots 10923-16383",
-      "    +-- kafka-03    (m5.2xl)  : broker 3",
-      "```",
-      "",
-      "## 6. Cost and Recovery",
-      "",
-      "| Category | Monthly | % | Notes |",
-      "|----------|---------|---|-------|",
-      "| Compute (EC2) | $18,500 | 37% | 60% reserved, 30% on-demand, 10% spot |",
-      "| Storage (S3+EBS) | $12,300 | 25% | S3 lifecycle saves 60% on warm/cold |",
-      "| Database (RDS) | $8,200 | 16% | Multi-AZ PG with provisioned IOPS |",
-      "| Network | $4,100 | 8% | Cross-AZ replication dominates |",
-      "| Managed | $3,800 | 8% | ES, monitoring, DNS, ALB |",
-      "| Other | $3,100 | 6% | Backups, CI/CD, dev envs |",
-      "| **Total** | **$50,000** | **100%** | **$0.60 per 1M events** |",
-      "",
-      "- **RPO**: < 1 min (PG sync), < 5 min (S3 cross-region), < 30s (Kafka MirrorMaker2)",
-      "- **RTO**: < 15 min including DNS propagation and health verification",
-      "",
-      "---",
-      "",
-      "*Edit this document to test scroll sync. Add headings, tables, code blocks. Anchors rebuild automatically.*",
-    ].join("\n");
+      function parseMd(src) {
+        const blocks = [];
+        let html = src.replace(
+          /```(\w*)\n([\s\S]*?)```/g,
+          function (_, lang, code) {
+            const i = blocks.length;
+            blocks.push(
+              "<pre data-block><code>" + esc(code.trim()) + "</code></pre>",
+            );
+            return "\x00B" + i + "\x00";
+          },
+        );
+        html = esc(html);
+        html = html.replace(/^### (.+)$/gm, "<h3 data-heading>$1</h3>");
+        html = html.replace(/^## (.+)$/gm, "<h2 data-heading>$1</h2>");
+        html = html.replace(/^# (.+)$/gm, "<h1 data-heading>$1</h1>");
+        html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+        html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+        html = html.replace(/^---$/gm, "<hr data-block>");
+        html = html.replace(
+          /^&gt; (.+)$/gm,
+          "<blockquote data-block>$1</blockquote>",
+        );
+        html = html.replace(
+          /^(\|.+\|)\n(\|[\s\-:|]+\|)\n((?:\|.+\|\n?)+)/gm,
+          function (m, hdr, sep, body) {
+            const hs = hdr.split("|").filter(function (c) {
+              return c.trim();
+            });
+            const rs = body
+              .trim()
+              .split("\n")
+              .map(function (r) {
+                return r.split("|").filter(function (c) {
+                  return c.trim();
+                });
+              });
+            let o =
+              "<table data-block><thead><tr>" +
+              hs
+                .map(function (h) {
+                  return "<th>" + h.trim() + "</th>";
+                })
+                .join("") +
+              "</tr></thead><tbody>";
+            rs.forEach(function (r) {
+              o +=
+                "<tr>" +
+                r
+                  .map(function (c) {
+                    return "<td>" + c.trim() + "</td>";
+                  })
+                  .join("") +
+                "</tr>";
+            });
+            return o + "</tbody></table>";
+          },
+        );
+        html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
+        html = html.replace(
+          /(<li>[\s\S]*?<\/li>(\s*<li>[\s\S]*?<\/li>)*)/g,
+          "<ul data-block>$1</ul>",
+        );
+        html = html
+          .split("\n")
+          .map(function (l) {
+            const t = l.trim();
+            if (!t || /^</.test(t) || t.indexOf("\x00B") === 0) return t;
+            return "<p data-block>" + t + "</p>";
+          })
+          .join("\n");
+        html = html.replace(/\x00B(\d+)\x00/g, function (_, i) {
+          return blocks[+i];
+        });
+        return html;
+      }
+      function esc(s) {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
 
-    // === DOM ===
+      // === Anchor computation (px-based) ===
 
-    const ep = document.getElementById('ep');
-    const pp = document.getElementById('pp');
-    const edEl = document.getElementById('ed');
-    const pvEl = document.getElementById('pv');
-    const ind = document.getElementById('ind');
-    const ic = document.getElementById('ic');
+      function getAnchors(edPane, pvPane, edEl, pvEl) {
+        const text = edEl.textContent;
+        const lines = text.split("\n");
+        const headings = pvEl.querySelectorAll("[data-heading]");
 
-    edEl.textContent = SAMPLE;
-    function render() { pvEl.innerHTML = parseMd(edEl.textContent); }
-    render();
+        const edRect = edPane.getBoundingClientRect();
+        const pvRect = pvPane.getBoundingClientRect();
 
-    // Wait for layout
-    setTimeout(function () {
-
-      let markers = [];
-      let dragging = false;
-
-      function updateInd(d) {
-        markers.forEach(function (m) { m.remove(); });
-        markers = [];
-        const m = d.segments, vt = d.vTotal;
-        for (let i = 0; i < m.length; i++) {
-          const el = document.createElement('div');
-          el.className = 'im';
-          el.style.top = (vt > 0 ? m[i].vPx / vt * 100 : 0) + '%';
-          ind.appendChild(el);
-          markers.push(el);
+        // TreeWalker for editor char → Y
+        const walker = document.createTreeWalker(edEl, NodeFilter.SHOW_TEXT);
+        const nmap = [];
+        let nd,
+          off = 0;
+        while ((nd = walker.nextNode())) {
+          nmap.push({ n: nd, s: off, e: off + nd.length });
+          off += nd.length;
         }
-        document.getElementById('sa').textContent = m.length;
-        document.getElementById('ssnap').textContent = d.snapVs.length;
-        document.getElementById('sv').textContent = Math.round(vt);
+
+        function charY(cp) {
+          for (let i = 0; i < nmap.length; i++) {
+            if (cp >= nmap[i].s && cp < nmap[i].e) {
+              const r = document.createRange();
+              const lo = cp - nmap[i].s;
+              r.setStart(nmap[i].n, lo);
+              r.setEnd(nmap[i].n, Math.min(lo + 1, nmap[i].n.length));
+              return (
+                r.getBoundingClientRect().top - edRect.top + edPane.scrollTop
+              );
+            }
+          }
+          return edPane.scrollHeight;
+        }
+
+        function elemY(el) {
+          return el.getBoundingClientRect().top - pvRect.top + pvPane.scrollTop;
+        }
+
+        const anchors = [];
+
+        // Heading anchors (skip lines inside fenced code blocks)
+        let hIdx = 0;
+        let cp = 0;
+        let inFence = false;
+        for (let i = 0; i < lines.length; i++) {
+          if (/^```/.test(lines[i])) {
+            inFence = !inFence;
+          } else if (
+            !inFence &&
+            /^#{1,3}\s/.test(lines[i]) &&
+            hIdx < headings.length
+          ) {
+            anchors.push({
+              aPx: Math.round(charY(cp)),
+              bPx: Math.round(elemY(headings[hIdx])),
+              snap: true,
+            });
+            hIdx++;
+          }
+          cp += lines[i].length + 1;
+        }
+
+        // Block-level anchors (table, pre) for density in sparse regions
+        const blocks = pvEl.querySelectorAll(
+          "table[data-block], pre[data-block]",
+        );
+        for (let j = 0; j < blocks.length; j++) {
+          const block = blocks[j];
+          const bTop = Math.round(elemY(block));
+          const bBot = Math.round(elemY(block) + block.offsetHeight);
+
+          // Find editor position by matching content
+          const snippet = block.textContent.substring(0, 40).trim();
+          if (!snippet) continue;
+          let idx = text.indexOf(snippet);
+          if (idx < 0) continue;
+
+          // Back up to block start
+          if (block.tagName === "TABLE") {
+            while (idx > 0 && text[idx - 1] !== "\n") idx--;
+          } else if (block.tagName === "PRE") {
+            const fence = text.lastIndexOf("```", idx);
+            if (fence >= 0 && idx - fence < 200) idx = fence;
+          }
+
+          const aTop = Math.round(charY(idx));
+
+          // Estimate editor bottom: find end of contiguous block source
+          let endIdx = idx;
+          if (block.tagName === "TABLE") {
+            let nl = idx;
+            while (nl < text.length) {
+              const next = text.indexOf("\n", nl + 1);
+              if (next < 0) {
+                nl = text.length;
+                break;
+              }
+              const nextLine = text.substring(nl + 1, next).trim();
+              if (!nextLine.startsWith("|")) {
+                nl = next;
+                break;
+              }
+              nl = next;
+            }
+            endIdx = nl;
+          } else if (block.tagName === "PRE") {
+            const close = text.indexOf("```", idx + 3);
+            endIdx = close >= 0 ? close + 3 : idx + 100;
+          }
+          const aBot = Math.round(charY(Math.min(text.length - 1, endIdx)));
+
+          anchors.push({ aPx: aTop, bPx: bTop });
+          if (bBot - bTop > 50) {
+            anchors.push({ aPx: aBot, bPx: bBot });
+          }
+        }
+
+        return anchors;
       }
 
-      const sync = new DualScrollSync(ep, pp, {
-        dampZonePx: 80,
-        dampMin: 0.15,
-        snapRangePx: 40,
-        snapDelayMs: 200,
-        getAnchors: function () { return getAnchors(ep, pp, edEl, pvEl); },
-        onMapBuilt: function (d) { updateInd(d); },
-        onSync: function () {
-          document.getElementById('fa').textContent = Math.round(ep.scrollTop);
-          document.getElementById('fb').textContent = Math.round(pp.scrollTop);
-          document.getElementById('fv').textContent = Math.round(sync._vCurrent);
-          const vt = sync._data ? sync._data.vTotal : 1;
-          ic.style.top = (vt > 0 ? sync._vCurrent / vt * 100 : 0) + '%';
-        },
-      });
-      sync.ensureMap();
+      // === Sample MD ===
 
-      // Indicator click/drag
-      function indClick(e) {
-        const r = ind.getBoundingClientRect();
-        const f = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
-        const d = sync.ensureMap();
-        const v = f * d.vTotal;
-        sync._vCurrent = v;
-        ep.scrollTop = lookup(d.segments, 'vPx', 'aPx', v);
-        pp.scrollTop = lookup(d.segments, 'vPx', 'bPx', v);
-        sync._expectedA = ep.scrollTop;
-        sync._expectedB = pp.scrollTop;
-        if (sync.onSync) sync.onSync();
+      const SAMPLE = [
+        "# System Architecture Document",
+        "",
+        "This document describes a distributed data processing platform. It includes large tables, ASCII diagrams, code blocks, and dense content to stress-test scroll synchronization.",
+        "",
+        "## 1. System Overview",
+        "",
+        "The platform consists of five subsystems: ingestion, processing, storage, query, and monitoring. Each runs as an independent service cluster.",
+        "",
+        "Data flows from external sources through ingestion, gets transformed in processing, persisted in storage, and made available through the query layer.",
+        "",
+        "### 1.1 Component Diagram",
+        "",
+        "```",
+        "+-------------------+     +--------------------+     +------------------+",
+        "|                   |     |                    |     |                  |",
+        "|   Data Sources    +---->+   Ingestion Layer  +---->+  Message Queue   |",
+        "|                   |     |                    |     |                  |",
+        "| - REST APIs       |     | - Rate limiting    |     | - Partitioned    |",
+        "| - Webhooks        |     | - Schema validate  |     | - Replicated     |",
+        "| - File uploads    |     | - Deduplication    |     | - Ordered        |",
+        "| - Stream feeds    |     | - Format normalize |     | - Persistent     |",
+        "|                   |     |                    |     |                  |",
+        "+-------------------+     +--------------------+     +--------+---------+",
+        "                                                              |",
+        "                                                              v",
+        "+-------------------+     +--------------------+     +--------+---------+",
+        "|                   |     |                    |     |                  |",
+        "|   Query Engine    +<----+   Storage Layer    +<----+  Processing     |",
+        "|                   |     |                    |     |                  |",
+        "| - SQL interface   |     | - Time-series DB   |     | - Stream proc   |",
+        "| - GraphQL API     |     | - Document store   |     | - Batch proc    |",
+        "| - Caching layer   |     | - Object storage   |     | - ML pipeline   |",
+        "| - Access control  |     | - Search index     |     | - Aggregation   |",
+        "|                   |     |                    |     |                  |",
+        "+-------------------+     +--------------------+     +------------------+",
+        "```",
+        "",
+        "### 1.2 Technology Stack",
+        "",
+        "| Layer | Technology | Version | Purpose | Scaling Model | SLA |",
+        "|-------|-----------|---------|---------|--------------|-----|",
+        "| Ingestion | Go microservices | 1.21 | HTTP/gRPC endpoints with validation and rate limiting per API key | Horizontal auto-scale 3-50 instances based on request rate | 99.99% uptime p99 < 50ms |",
+        "| Queue | Apache Kafka | 3.6 | Durable message transport with exactly-once semantics and partition-level ordering guarantees | Fixed partition count with consumer group rebalancing on failure | Zero message loss, < 100ms e2e |",
+        "| Processing | Apache Flink | 1.18 | Stream processing with event-time windows, watermarks, and exactly-once state snapshots | Task-level parallelism with automatic checkpoint recovery and rescaling | Lag < 5s at 1M events/sec |",
+        "| Storage | PostgreSQL + S3 | 16.1 | Hot data in PG with auto-partitioning, cold data in S3 Parquet with lifecycle policies | Vertical for PG, horizontal for S3, read replicas for analytics | RPO < 1min, RTO < 5min |",
+        "| Query | Trino | 433 | Federated SQL across PG, S3, and ES with cost-based optimizer and predicate pushdown | Worker auto-scale on queue depth, spot instances for batch workloads | p95 < 10s for dashboards |",
+        "| Search | Elasticsearch | 8.11 | Full-text search, log analytics, metric aggregation with cross-cluster replication | Index-level sharding with automatic rebalancing across data nodes | p99 < 200ms, index lag < 30s |",
+        "| Cache | Redis Cluster | 7.2 | Query caching, session storage, rate counters with hash-slot sharding and sentinel HA | Auto-failover < 10s, LRU eviction with configurable maxmemory policies | Hit ratio > 85% |",
+        "| Monitor | Prometheus | 2.48 | Metrics collection, alerting rules, long-term storage via Thanos sidecar and compactor | Federation across clusters with hierarchical recording rules | Scrape 15s, alert eval 30s |",
+        "",
+        "## 2. Data Processing Pipeline",
+        "",
+        "The processing layer transforms raw events into enriched, aggregated data products.",
+        "",
+        "### 2.1 Stream Processing Flow",
+        "",
+        "```",
+        "Kafka: raw-events",
+        "    |",
+        "    v",
+        "[Deserialize] --> [Validate] --> [Enrich]",
+        "                                    |",
+        "                    +---------------+---------------+",
+        "                    |               |               |",
+        "                    v               v               v",
+        "             [1-min window]  [5-min window]  [Session window]",
+        "                    |               |               |",
+        "                    v               v               v",
+        "             [Sink: PG]      [Sink: ES]      [Sink: S3]",
+        "```",
+        "",
+        "### 2.2 Enrichment Rules",
+        "",
+        "| Rule | Input | Lookup Source | Output | Cache TTL | Fallback |",
+        "|------|-------|-------------|--------|-----------|----------|",
+        "| Geo-IP | source_ip | MaxMind GeoIP2 database updated weekly with city-level accuracy and confidence scoring for 99.8% of IPv4 and 95% of IPv6 addresses | geo_country, geo_city, geo_lat, geo_lon, geo_accuracy | 24h in Redis keyed by /24 subnet, bulk refresh on DB update | Last known location or unknown with low confidence |",
+        "| User Agent | ua_string | Custom pattern library with 15,000 rules covering browsers, bots, mobile apps, IoT devices, and embedded webviews across all major platforms | device_type, browser, browser_ver, os, os_ver, is_bot, is_crawler | 1h keyed by MD5(ua_string), ~2M unique entries in steady state | Basic regex parse, mark unrecognized |",
+        "| Company | email_domain | Clearbit API + local PG cache of 2M+ company records with industry classification, employee count ranges, revenue estimates, and tech stack | company_name, industry, size_range, revenue_range, tech_stack[] | 30d in PG, API fallback on miss with exponential backoff and circuit breaker | Skip enrichment, mark unresolved |",
+        "| Threat | source_ip, url | AbuseIPDB + VirusTotal + internal blocklist aggregated from 12 threat intelligence feeds with daily reconciliation and deduplication | threat_score 0-100, categories[], is_malicious, first_seen, report_count | 6h for IP, 24h for URL, with background refresh for high-threat entries | Neutral score 50, flag for review |",
+        "| Revenue | user_id | Internal billing system with real-time subscription status, historical MRR, expansion/contraction tracking, and churn risk scoring | plan_tier, mrr_cents, lifetime_value, churn_risk, last_activity | 5min for active users, 1h for inactive, invalidated on billing events | Lookup from daily snapshot table |",
+        "",
+        "## 3. Database Schema",
+        "",
+        "### 3.1 Events Table (Hot Storage)",
+        "",
+        "```sql",
+        "CREATE TABLE events (",
+        "    id              BIGINT GENERATED ALWAYS AS IDENTITY,",
+        "    event_id        UUID NOT NULL DEFAULT gen_random_uuid(),",
+        "    received_at     TIMESTAMPTZ NOT NULL DEFAULT now(),",
+        "    event_type      TEXT NOT NULL,",
+        "    source          TEXT NOT NULL,",
+        "    payload         JSONB NOT NULL,",
+        "    geo_country     TEXT,",
+        "    geo_city        TEXT,",
+        "    device_type     TEXT,",
+        "    threat_score    SMALLINT DEFAULT 0,",
+        "    PRIMARY KEY (id, received_at)",
+        ") PARTITION BY RANGE (received_at);",
+        "CREATE INDEX idx_events_type ON events (event_type, received_at);",
+        "CREATE INDEX idx_events_source ON events (source, received_at);",
+        "```",
+        "",
+        "### 3.2 Data Lifecycle",
+        "",
+        "| Age | Storage | Format | Compression | Access Pattern | Retention Policy |",
+        "|-----|---------|--------|------------|---------------|-----------------|",
+        "| 0-7d | PostgreSQL NVMe SSD, 3-node HA with sync replication and daily PITR backups to S3 | Row-based with TOAST for JSONB, daily partitions | LZ4 for TOAST columns, zstd for WAL | Point lookups < 1ms, range scans < 50ms | Always hot, 4h backup cycle |",
+        "| 7-90d | S3 Standard with cross-region replication, versioning, and integrity checksums | Apache Parquet with Snappy compression, partitioned by date/type/source | Snappy block compression ~3:1, dictionary encoding for strings | Trino federated queries, typical latency 5-30s | On-demand via Trino |",
+        "| 90d-1y | S3 Infrequent Access with lifecycle transition, integrity audit monthly | Parquet with zstd compression, yearly partitions merged from daily files | Zstandard level 3 ~5:1 ratio | Quarterly compliance reports, incident investigation | Available within 12h |",
+        "| 1y+ | Glacier Deep Archive with vault lock for immutability, cross-account backup | ORC format with maximum compression, yearly archives | Zstandard level 19 ~15:1 for event data | Annual audit and regulatory compliance | 48h retrieval |",
+        "",
+        "## 4. Monitoring Dashboard",
+        "",
+        "```",
+        "+================================================================+",
+        "|  PLATFORM HEALTH                     2024-01-15 14:30 UTC      |",
+        "+================================================================+",
+        "|  Ingestion    [================----]  847K/min  (85% capacity) |",
+        "|  Proc. Lag    [==------------------]  2.1 sec   (OK)           |",
+        "|  Queue        [====----------------]  1.2M msgs (20% depth)    |",
+        "|  Storage      [============--------]  14.2 TB   (60% used)     |",
+        "|  Query p95    [======--------------]  3.2 sec   (within SLA)   |",
+        "|  Errors       [=-------------------]  0.02%     (nominal)      |",
+        "|  Cache Hit    [=================---]  89%       (target: 85%)  |",
+        "+================================================================+",
+        "```",
+        "",
+        "### 4.1 Alert Configuration",
+        "",
+        "| Alert | Condition | Severity | Action |",
+        "|-------|----------|----------|--------|",
+        "| Error spike | error_rate > 1% sustained for 5 minutes across all ingestion pods | Critical / PagerDuty | Auto-scale ingestion +50%, page on-call |",
+        "| Processing lag | flink_watermark_lag > 30s on any operator in the main pipeline | Warning / Slack | Increase parallelism, trigger savepoint |",
+        "| Disk pressure | pg_data_usage > 80% on any node including WAL and temp files | Warning / Slack | Emergency partition cleanup, alert DBA |",
+        "| Replication lag | pg_replication_lag > 10s on any replica measured by WAL LSN delta | Critical / PagerDuty | Pause read traffic to lagging replica |",
+        "",
+        "## 5. Infrastructure Layout",
+        "",
+        "```",
+        "Region: us-east-1",
+        "|",
+        "+-- AZ-a",
+        "|   +-- k8s-node-01 (m5.4xl) : ingestion x4, processing x2",
+        "|   +-- k8s-node-02 (m5.4xl) : ingestion x4, query x2",
+        "|   +-- pg-primary  (r6g.2xl) : PostgreSQL primary (sync)",
+        "|   +-- redis-01    (r6g.xl)  : slots 0-5460",
+        "|   +-- kafka-01    (m5.2xl)  : broker 1, partitions 0-99",
+        "|",
+        "+-- AZ-b",
+        "|   +-- k8s-node-03 (m5.4xl) : ingestion x4, processing x2",
+        "|   +-- k8s-node-04 (m5.4xl) : query x4",
+        "|   +-- pg-replica-1 (r6g.2xl) : sync replica",
+        "|   +-- redis-02    (r6g.xl)  : slots 5461-10922",
+        "|   +-- kafka-02    (m5.2xl)  : broker 2",
+        "|",
+        "+-- AZ-c",
+        "    +-- k8s-node-05 (m5.4xl) : processing x4, monitoring",
+        "    +-- pg-replica-2 (r6g.2xl) : async replica (analytics)",
+        "    +-- redis-03    (r6g.xl)  : slots 10923-16383",
+        "    +-- kafka-03    (m5.2xl)  : broker 3",
+        "```",
+        "",
+        "## 6. Cost and Recovery",
+        "",
+        "| Category | Monthly | % | Notes |",
+        "|----------|---------|---|-------|",
+        "| Compute (EC2) | $18,500 | 37% | 60% reserved, 30% on-demand, 10% spot |",
+        "| Storage (S3+EBS) | $12,300 | 25% | S3 lifecycle saves 60% on warm/cold |",
+        "| Database (RDS) | $8,200 | 16% | Multi-AZ PG with provisioned IOPS |",
+        "| Network | $4,100 | 8% | Cross-AZ replication dominates |",
+        "| Managed | $3,800 | 8% | ES, monitoring, DNS, ALB |",
+        "| Other | $3,100 | 6% | Backups, CI/CD, dev envs |",
+        "| **Total** | **$50,000** | **100%** | **$0.60 per 1M events** |",
+        "",
+        "- **RPO**: < 1 min (PG sync), < 5 min (S3 cross-region), < 30s (Kafka MirrorMaker2)",
+        "- **RTO**: < 15 min including DNS propagation and health verification",
+        "",
+        "---",
+        "",
+        "*Edit this document to test scroll sync. Add headings, tables, code blocks. Anchors rebuild automatically.*",
+      ].join("\n");
+
+      // === DOM ===
+
+      const ep = document.getElementById("ep");
+      const pp = document.getElementById("pp");
+      const edEl = document.getElementById("ed");
+      const pvEl = document.getElementById("pv");
+      const ind = document.getElementById("ind");
+      const ic = document.getElementById("ic");
+
+      edEl.textContent = SAMPLE;
+      function render() {
+        pvEl.innerHTML = parseMd(edEl.textContent);
       }
-      ind.addEventListener('mousedown', function (e) { if (e.button === 0) { e.preventDefault(); dragging = true; indClick(e); } });
-      document.addEventListener('mousemove', function (e) { if (dragging) { e.preventDefault(); indClick(e); } });
-      document.addEventListener('mouseup', function () { dragging = false; });
+      render();
 
-      // Edit → rebuild
-      let timer;
-      edEl.addEventListener('input', function () {
-        clearTimeout(timer);
-        timer = setTimeout(function () {
-          render();
-          setTimeout(function () { sync.invalidate(); sync.ensureMap(); }, 300);
-        }, 500);
-      });
-      window.addEventListener('resize', function () { sync.invalidate(); sync.ensureMap(); });
+      // Wait for layout
+      setTimeout(function () {
+        let markers = [];
+        let dragging = false;
 
-    }, 300);
-  </script>
-</body>
+        function updateInd(d) {
+          markers.forEach(function (m) {
+            m.remove();
+          });
+          markers = [];
+          const m = d.segments,
+            vt = d.vTotal;
+          for (let i = 0; i < m.length; i++) {
+            const el = document.createElement("div");
+            el.className = "im";
+            el.style.top = (vt > 0 ? (m[i].vPx / vt) * 100 : 0) + "%";
+            ind.appendChild(el);
+            markers.push(el);
+          }
+          document.getElementById("sa").textContent = m.length;
+          document.getElementById("ssnap").textContent = d.snapVs.length;
+          document.getElementById("sv").textContent = Math.round(vt);
+        }
 
+        const sync = new DualScrollSync(ep, pp, {
+          dampZonePx: 80,
+          dampMin: 0.15,
+          snapRangePx: 40,
+          snapDelayMs: 200,
+          getAnchors: function () {
+            return getAnchors(ep, pp, edEl, pvEl);
+          },
+          onMapBuilt: function (d) {
+            updateInd(d);
+          },
+          onSync: function () {
+            document.getElementById("fa").textContent = Math.round(
+              ep.scrollTop,
+            );
+            document.getElementById("fb").textContent = Math.round(
+              pp.scrollTop,
+            );
+            document.getElementById("fv").textContent = Math.round(
+              sync._vCurrent,
+            );
+            const vt = sync._data ? sync._data.vTotal : 1;
+            ic.style.top = (vt > 0 ? (sync._vCurrent / vt) * 100 : 0) + "%";
+          },
+        });
+        sync.ensureMap();
+
+        // Indicator click/drag
+        function indClick(e) {
+          const r = ind.getBoundingClientRect();
+          const f = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+          const d = sync.ensureMap();
+          const v = f * d.vTotal;
+          sync._vCurrent = v;
+          ep.scrollTop = lookup(d.segments, "vPx", "aPx", v);
+          pp.scrollTop = lookup(d.segments, "vPx", "bPx", v);
+          sync._expectedA = ep.scrollTop;
+          sync._expectedB = pp.scrollTop;
+          if (sync.onSync) sync.onSync();
+        }
+        ind.addEventListener("mousedown", function (e) {
+          if (e.button === 0) {
+            e.preventDefault();
+            dragging = true;
+            indClick(e);
+          }
+        });
+        document.addEventListener("mousemove", function (e) {
+          if (dragging) {
+            e.preventDefault();
+            indClick(e);
+          }
+        });
+        document.addEventListener("mouseup", function () {
+          dragging = false;
+        });
+
+        // Edit → rebuild
+        let timer;
+        edEl.addEventListener("input", function () {
+          clearTimeout(timer);
+          timer = setTimeout(function () {
+            render();
+            setTimeout(function () {
+              sync.invalidate();
+              sync.ensureMap();
+            }, 300);
+          }, 500);
+        });
+        window.addEventListener("resize", function () {
+          sync.invalidate();
+          sync.ensureMap();
+        });
+      }, 300);
+    </script>
+  </body>
 </html>

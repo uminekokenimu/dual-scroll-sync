@@ -64,6 +64,9 @@
  * @property {number} [snapDelayMs=200] - Idle time before snap engages (ms).
  * @property {number} [snapOffsetPx=25] - Snap lands this many v-px *before* the anchor
  *   (so the heading appears ~1–2 lines below the viewport top). 0 = land exactly on anchor.
+ * @property {number} [wheelSmooth=0.3] - Interpolation factor for wheel input (0–1).
+ *   Each animation frame drains this fraction of the remaining delta.
+ *   1 = instant (no smoothing). 0 = frozen. Typical range: 0.2–0.5.
  * @property {function} [requestFrame] - Frame scheduler (default: requestAnimationFrame or setTimeout fallback).
  * @property {function} [cancelFrame]  - Cancel a scheduled frame (default: cancelAnimationFrame or clearTimeout).
  */
@@ -87,7 +90,9 @@ export function buildMap(anchors, sMaxA, sMaxB) {
         snap: !!e.snap,
       };
     })
-    .sort(function (x, y) { return x.aPx - y.aPx; });
+    .sort(function (x, y) {
+      return x.aPx - y.aPx;
+    });
 
   const pts = [{ aPx: 0, bPx: 0, snap: false }];
   let lastB = 0;
@@ -111,14 +116,23 @@ export function buildMap(anchors, sMaxA, sMaxB) {
     const bS = pts[i + 1].bPx - pts[i].bPx;
     const vS = Math.max(aS, bS);
     map.push({
-      aPx: pts[i].aPx, bPx: pts[i].bPx, vPx: vCum,
-      aS: aS, bS: bS, vS: vS,
+      aPx: pts[i].aPx,
+      bPx: pts[i].bPx,
+      vPx: vCum,
+      aS: aS,
+      bS: bS,
+      vS: vS,
     });
     if (pts[i].snap) snapVs.push(vCum);
     vCum += vS;
   }
 
-  return { segments: map, vTotal: vCum, snapVs: snapVs, droppedCount: droppedCount };
+  return {
+    segments: map,
+    vTotal: vCum,
+    snapVs: snapVs,
+    droppedCount: droppedCount,
+  };
 }
 
 /**
@@ -133,10 +147,11 @@ export function buildMap(anchors, sMaxA, sMaxB) {
  * @returns {number} Position on target axis (px).
  */
 export function lookup(segments, from, to, value) {
-  const fromS = from.charAt(0) + 'S';
-  const toS = to.charAt(0) + 'S';
+  const fromS = from.charAt(0) + "S";
+  const toS = to.charAt(0) + "S";
 
-  let lo = 0, hi = segments.length - 1;
+  let lo = 0,
+    hi = segments.length - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
     if (segments[mid][from] <= value) lo = mid;
@@ -153,7 +168,8 @@ export function lookup(segments, from, to, value) {
 
 function nearestSnap(snapVs, v) {
   if (snapVs.length === 0) return null;
-  let lo = 0, hi = snapVs.length - 1;
+  let lo = 0,
+    hi = snapVs.length - 1;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (snapVs[mid] < v) lo = mid + 1;
@@ -198,14 +214,21 @@ export class DualScrollSync {
     this.onMapBuilt = opts.onMapBuilt || null;
     this.dampZonePx = opts.dampZonePx ?? 80;
     this.dampMin = opts.dampMin ?? 0.15;
-    this.snapRangePx = opts.snapRangePx ?? 40;
+    this.snapRangePx = opts.snapRangePx ?? 0;
     this.snapDelayMs = opts.snapDelayMs ?? 200;
     this.snapOffsetPx = opts.snapOffsetPx ?? 25;
+    this.wheelSmooth = opts.wheelSmooth ?? 0.05;
     this.enabled = true;
 
-    const g = typeof globalThis !== 'undefined' ? globalThis : {};
-    this._requestFrame = opts.requestFrame || g.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
-    this._cancelFrame = opts.cancelFrame || g.cancelAnimationFrame || clearTimeout;
+    const g = typeof globalThis !== "undefined" ? globalThis : {};
+    this._requestFrame =
+      opts.requestFrame ||
+      g.requestAnimationFrame ||
+      function (fn) {
+        return setTimeout(fn, 16);
+      };
+    this._cancelFrame =
+      opts.cancelFrame || g.cancelAnimationFrame || clearTimeout;
 
     this._data = null;
     this._dirty = true;
@@ -215,20 +238,30 @@ export class DualScrollSync {
     this._lock = null;
     this._snapTimer = null;
     this._snapRafId = null;
+    this._wheelRemaining = 0;
+    this._wheelPumping = false;
 
     const self = this;
-    this._onScrollA = function () { self._handleScroll('a'); };
-    this._onScrollB = function () { self._handleScroll('b'); };
-    this._onWheel = function (e) { self._handleWheel(e); };
+    this._onScrollA = function () {
+      self._handleScroll("a");
+    };
+    this._onScrollB = function () {
+      self._handleScroll("b");
+    };
+    this._onWheel = function (e) {
+      self._onWheelEvent(e);
+    };
 
-    paneA.addEventListener('scroll', this._onScrollA);
-    paneB.addEventListener('scroll', this._onScrollB);
-    paneA.addEventListener('wheel', this._onWheel, { passive: false });
-    paneB.addEventListener('wheel', this._onWheel, { passive: false });
+    paneA.addEventListener("scroll", this._onScrollA);
+    paneB.addEventListener("scroll", this._onScrollB);
+    paneA.addEventListener("wheel", this._onWheel, { passive: false });
+    paneB.addEventListener("wheel", this._onWheel, { passive: false });
   }
 
   /** Mark the scroll map for rebuild on next access. */
-  invalidate() { this._dirty = true; }
+  invalidate() {
+    this._dirty = true;
+  }
 
   /**
    * Ensure the scroll map is current.
@@ -252,18 +285,19 @@ export class DualScrollSync {
   /** Remove all event listeners and timers. */
   destroy() {
     this._cancelSnap();
-    this.paneA.removeEventListener('scroll', this._onScrollA);
-    this.paneB.removeEventListener('scroll', this._onScrollB);
-    this.paneA.removeEventListener('wheel', this._onWheel);
-    this.paneB.removeEventListener('wheel', this._onWheel);
+    this._wheelRemaining = 0;
+    this.paneA.removeEventListener("scroll", this._onScrollA);
+    this.paneB.removeEventListener("scroll", this._onScrollB);
+    this.paneA.removeEventListener("wheel", this._onWheel);
+    this.paneB.removeEventListener("wheel", this._onWheel);
   }
 
   /** @private Set both panes from _vCurrent. */
   _applyV() {
     const segs = this._data.segments;
-    this._lock = 'a';
-    this.paneA.scrollTop = lookup(segs, 'vPx', 'aPx', this._vCurrent);
-    this.paneB.scrollTop = lookup(segs, 'vPx', 'bPx', this._vCurrent);
+    this._lock = "a";
+    this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
+    this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
     this._expectedA = this.paneA.scrollTop;
     this._expectedB = this.paneB.scrollTop;
     this._lock = null;
@@ -274,14 +308,14 @@ export class DualScrollSync {
   _handleScroll(source) {
     if (!this.enabled) return;
 
-    if (source === 'a' && this._expectedA !== null) {
+    if (source === "a" && this._expectedA !== null) {
       if (Math.abs(this.paneA.scrollTop - this._expectedA) < 2) {
         this._expectedA = null;
         return;
       }
       this._expectedA = null;
     }
-    if (source === 'b' && this._expectedB !== null) {
+    if (source === "b" && this._expectedB !== null) {
       if (Math.abs(this.paneB.scrollTop - this._expectedB) < 2) {
         this._expectedB = null;
         return;
@@ -297,28 +331,56 @@ export class DualScrollSync {
     const d = this.ensureMap();
     const segs = d.segments;
 
-    if (source === 'a') {
-      this._vCurrent = lookup(segs, 'aPx', 'vPx', this.paneA.scrollTop);
-      this.paneB.scrollTop = lookup(segs, 'vPx', 'bPx', this._vCurrent);
+    if (source === "a") {
+      this._vCurrent = lookup(segs, "aPx", "vPx", this.paneA.scrollTop);
+      this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
       this._expectedB = this.paneB.scrollTop;
     } else {
-      this._vCurrent = lookup(segs, 'bPx', 'vPx', this.paneB.scrollTop);
-      this.paneA.scrollTop = lookup(segs, 'vPx', 'aPx', this._vCurrent);
+      this._vCurrent = lookup(segs, "bPx", "vPx", this.paneB.scrollTop);
+      this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
       this._expectedA = this.paneA.scrollTop;
     }
     if (this.onSync) this.onSync();
   }
 
-  /** @private */
-  _handleWheel(e) {
+  /** @private Guard checks + preventDefault, then dispatch delta (immediate or buffered). */
+  _onWheelEvent(e) {
     if (!this.enabled || e.shiftKey || e.ctrlKey || e.metaKey) return;
     if (e.deltaX !== 0 && e.deltaY === 0) return;
     e.preventDefault();
+    if (this.wheelSmooth >= 1) {
+      this._handleWheel(e.deltaY);
+      this._scheduleSnap();
+      return;
+    }
+    this._wheelRemaining += e.deltaY;
+    if (!this._wheelPumping) this._pumpWheel();
+  }
 
+  /** @private rAF drain loop: drains _wheelRemaining one frame at a time. */
+  _pumpWheel() {
+    this._wheelPumping = true;
+    const self = this;
+    const rf = this._requestFrame;
+    (function loop() {
+      rf(function () {
+        const delta = self._wheelRemaining * self.wheelSmooth;
+        self._wheelRemaining -= delta;
+        self._handleWheel(delta);
+        if (Math.abs(self._wheelRemaining) >= 0.5) loop();
+        else {
+          self._wheelPumping = false;
+          self._scheduleSnap();
+        }
+      });
+    })();
+  }
+
+  /** @private Processing layer: apply delta through damping, update vCurrent, sync panes. */
+  _handleWheel(delta) {
     const d = this.ensureMap();
-    let delta = e.deltaY;
 
-    // Damping near snap anchors (offset applied so damping zone centers on landing position)
+    // Damping near snap anchors
     if (this.dampZonePx > 0 && d.snapVs.length > 0) {
       const off = this.snapOffsetPx;
       const snap = nearestSnap(d.snapVs, this._vCurrent + off);
@@ -326,14 +388,15 @@ export class DualScrollSync {
         const target = Math.max(0, snap - off);
         const dist = Math.abs(this._vCurrent - target);
         if (dist < this.dampZonePx) {
-          delta *= this.dampMin + (1 - this.dampMin) * smoothstep(dist / this.dampZonePx);
+          delta *=
+            this.dampMin +
+            (1 - this.dampMin) * smoothstep(dist / this.dampZonePx);
         }
       }
     }
 
     this._vCurrent = Math.max(0, Math.min(d.vTotal, this._vCurrent + delta));
     this._applyV();
-    this._scheduleSnap();
   }
 
   /**
@@ -341,8 +404,14 @@ export class DualScrollSync {
    * @private
    */
   _cancelSnap() {
-    if (this._snapTimer) { clearTimeout(this._snapTimer); this._snapTimer = null; }
-    if (this._snapRafId) { this._cancelFrame(this._snapRafId); this._snapRafId = null; }
+    if (this._snapTimer) {
+      clearTimeout(this._snapTimer);
+      this._snapTimer = null;
+    }
+    if (this._snapRafId) {
+      this._cancelFrame(this._snapRafId);
+      this._snapRafId = null;
+    }
   }
 
   /**

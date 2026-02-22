@@ -236,6 +236,7 @@ function makeSync(a, b, extra) {
     ],
     dampZonePx: 0,
     snapRangePx: 0,
+    wheelSmooth: 1,
     ...extra,
   });
 }
@@ -381,5 +382,27 @@ describe('DualScrollSync', () => {
     a._fire('wheel', wheelEvent(50));
     assert.ok(count > prev);
     s.destroy();
+  });
+
+  test('wheelSmooth < 1 drains delta across multiple frames', (t, done) => {
+    let frames = 0;
+    const s = makeSync(a, b, {
+      wheelSmooth: 0.5,
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    s.ensureMap();
+    s.onSync = () => { frames++; };
+    a._fire('wheel', wheelEvent(100));
+
+    // Delta should NOT be applied synchronously
+    assert.equal(a.scrollTop, 0, 'not applied synchronously');
+
+    setTimeout(() => {
+      assert.ok(frames >= 2, `expected multiple frames, got ${frames}`);
+      assert.ok(a.scrollTop > 0, 'pane A moved after drain');
+      assert.ok(b.scrollTop > 0, 'pane B moved after drain');
+      s.destroy();
+      done();
+    }, 200);
   });
 });

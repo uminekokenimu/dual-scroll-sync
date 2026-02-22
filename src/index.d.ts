@@ -74,6 +74,8 @@ export interface SyncOptions {
   snapDelayMs?: number;
   /** V-px offset before anchor for snap landing position. @default 25 */
   snapOffsetPx?: number;
+  /** Interpolation factor for wheel input (0–1). Each frame drains this fraction of remaining delta. 1 = instant. @default 0.3 */
+  wheelSmooth?: number;
   /** Frame scheduler. Default: requestAnimationFrame (with setTimeout fallback). */
   requestFrame?: (callback: () => void) => number;
   /** Cancel a scheduled frame. Default: cancelAnimationFrame (with clearTimeout fallback). */
@@ -125,6 +127,8 @@ export class DualScrollSync {
   snapDelayMs: number;
   /** Snap landing offset (v-px). */
   snapOffsetPx: number;
+  /** Wheel interpolation factor (0–1). */
+  wheelSmooth: number;
   /** When false, all sync is suspended. */
   enabled: boolean;
 

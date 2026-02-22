@@ -1,8 +1,9 @@
 /**
- * Build examples/demo.html from examples/demo.src.html + src/index.js.
+ * Update the inlined library in examples/demo.html from src/index.js.
  *
- * Replaces the `// @@LIBRARY@@` marker in the template with a processed
- * copy of the library source (export keywords stripped, indented 4 spaces).
+ * Replaces everything between the `// @@LIB-START@@` and `// @@LIB-END@@`
+ * markers with a processed copy of the library source (export keywords
+ * stripped, indented 4 spaces).
  *
  * Usage: node scripts/build-demo.js
  */
@@ -13,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const libSrc = readFileSync(resolve(root, 'src/index.js'), 'utf8');
-const template = readFileSync(resolve(root, 'examples/demo.src.html'), 'utf8');
+const demo = readFileSync(resolve(root, 'examples/demo.html'), 'utf8');
 
 // Strip export keywords for inline embedding
 const libInline = libSrc
@@ -24,7 +25,17 @@ const libInline = libSrc
   .map(function (line) { return line ? '    ' + line : ''; })
   .join('\n');
 
-const output = template.replace('    // @@LIBRARY@@', libInline);
+const startTag = '    // @@LIB-START@@';
+const endTag = '    // @@LIB-END@@';
+
+const startIdx = demo.indexOf(startTag);
+const endIdx = demo.indexOf(endTag);
+if (startIdx < 0 || endIdx < 0) {
+  console.error('Could not find @@LIB-START@@ / @@LIB-END@@ markers in demo.html');
+  process.exit(1);
+}
+
+const output = demo.substring(0, startIdx) + startTag + '\n' + libInline + '\n' + demo.substring(endIdx);
 
 writeFileSync(resolve(root, 'examples/demo.html'), output);
-console.log('Built examples/demo.html');
+console.log('Updated examples/demo.html');
