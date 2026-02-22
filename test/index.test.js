@@ -14,11 +14,10 @@ function near(actual, expected, tol) {
 
 describe('buildMap', () => {
   test('empty anchors → single segment', () => {
-    const { segments, vTotal, snapVs, droppedCount } = buildMap([], 1000, 2000);
+    const { segments, vTotal, droppedCount } = buildMap([], 1000, 2000);
     assert.equal(segments.length, 1);
     assert.deepEqual(segments[0], { aPx: 0, bPx: 0, vPx: 0, aS: 1000, bS: 2000, vS: 2000 });
     assert.equal(vTotal, 2000);
-    assert.deepEqual(snapVs, []);
     assert.equal(droppedCount, 0);
   });
 
@@ -73,15 +72,6 @@ describe('buildMap', () => {
     const { segments } = buildMap([{ aPx: 9999, bPx: 9999 }], 500, 300);
     assert.equal(segments[0].aS, 500);
     assert.equal(segments[0].bS, 300);
-  });
-
-  test('snap anchors collected in snapVs', () => {
-    const { snapVs } = buildMap([
-      { aPx: 200, bPx: 200, snap: true },
-      { aPx: 500, bPx: 500 },
-      { aPx: 800, bPx: 800, snap: true },
-    ], 1000, 1000);
-    assert.equal(snapVs.length, 2);
   });
 
   test('sMaxA=0 and sMaxB=0 → vTotal=0', () => {
@@ -231,11 +221,9 @@ function wheelEvent(deltaY) {
 function makeSync(a, b, extra) {
   return new DualScrollSync(a, b, {
     getAnchors: () => [
-      { aPx: 200, bPx: 600, snap: true },
-      { aPx: 500, bPx: 800, snap: true },
+      { aPx: 200, bPx: 600 },
+      { aPx: 500, bPx: 800 },
     ],
-    dampZonePx: 0,
-    snapRangePx: 0,
     wheelSmooth: 1,
     ...extra,
   });
@@ -318,7 +306,7 @@ describe('DualScrollSync', () => {
   test('getAnchors exception → empty map, no crash', () => {
     const s = new DualScrollSync(a, b, {
       getAnchors: () => { throw new Error('broken'); },
-      dampZonePx: 0, snapRangePx: 0,
+      wheelSmooth: 1,
     });
     const d = s.ensureMap();
     assert.deepEqual(d.segments, []);
@@ -356,19 +344,6 @@ describe('DualScrollSync', () => {
       preventDefault() {},
     });
     assert.equal(a.scrollTop, 0);
-    s.destroy();
-  });
-
-  test('damping reduces effective delta near snap anchor', () => {
-    const s = makeSync(a, b, { dampZonePx: 80, dampMin: 0.15 });
-    s.ensureMap();
-    const snapV = s.ensureMap().snapVs[0];
-    s._vCurrent = snapV - s.snapOffsetPx - 10; // 10px from landing
-    const vBefore = s._vCurrent;
-    a._fire('wheel', wheelEvent(100));
-    const moved = s._vCurrent - vBefore;
-    assert.ok(moved > 0, 'should move forward');
-    assert.ok(moved < 100, `expected damped < 100, got ${moved}`);
     s.destroy();
   });
 

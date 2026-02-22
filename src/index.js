@@ -8,10 +8,6 @@
  * Wheel input moves along the virtual axis in pixels: one notch moves
  * the dominant pane exactly `deltaY` pixels, like normal browser scrolling.
  *
- * Optional features (independently disabled by setting to 0):
- * - **Damping**: smoothstep deceleration near snap anchors.
- * - **Snap**: settle to nearest snap anchor after wheel input stops.
- *
  * @module dual-scroll-sync
  * @version 0.6.0
  * @license MIT
@@ -32,7 +28,6 @@
  * @typedef {Object} Anchor
  * @property {number}  aPx  - Pixel position in pane A.
  * @property {number}  bPx  - Pixel position in pane B.
- * @property {boolean} [snap] - Mark as damping/snap target.
  */
 
 /**
@@ -49,7 +44,6 @@
  * @typedef {Object} MapData
  * @property {Segment[]} segments     - Ordered segments.
  * @property {number}    vTotal       - Total v-axis length (px).
- * @property {number[]}  snapVs       - V-axis positions of snap anchors (sorted).
  * @property {number}    droppedCount - Anchors dropped due to non-monotonic bPx.
  */
 
@@ -58,15 +52,9 @@
  * @property {function(): Anchor[]} getAnchors - Returns anchor array.
  * @property {function} [onSync]      - Called after each sync update.
  * @property {function(MapData)} [onMapBuilt] - Called on map rebuild.
- * @property {number} [dampZonePx=80] - Damping radius around snap anchors (v-px). 0 = off.
- * @property {number} [dampMin=0.15]  - Min damping factor at snap center (0–1).
- * @property {number} [snapRangePx=40]  - Snap attraction range (v-px). 0 = off.
- * @property {number} [snapDelayMs=200] - Idle time before snap engages (ms).
- * @property {number} [snapOffsetPx=25] - Snap lands this many v-px *before* the anchor
- *   (so the heading appears ~1–2 lines below the viewport top). 0 = land exactly on anchor.
- * @property {number} [wheelSmooth=0.3] - Interpolation factor for wheel input (0–1).
+ * @property {number} [wheelSmooth=0.05] - Interpolation factor for wheel input (0–1).
  *   Each animation frame drains this fraction of the remaining delta.
- *   1 = instant (no smoothing). 0 = frozen. Typical range: 0.2–0.5.
+ *   1 = instant (no smoothing). 0 = frozen. Typical range: 0.02–0.2.
  * @property {function} [requestFrame] - Frame scheduler (default: requestAnimationFrame or setTimeout fallback).
  * @property {function} [cancelFrame]  - Cancel a scheduled frame (default: cancelAnimationFrame or clearTimeout).
  */
@@ -87,14 +75,13 @@ export function buildMap(anchors, sMaxA, sMaxB) {
       return {
         aPx: Math.max(0, Math.min(sMaxA, Math.round(e.aPx))),
         bPx: Math.max(0, Math.min(sMaxB, Math.round(e.bPx))),
-        snap: !!e.snap,
       };
     })
     .sort(function (x, y) {
       return x.aPx - y.aPx;
     });
 
-  const pts = [{ aPx: 0, bPx: 0, snap: false }];
+  const pts = [{ aPx: 0, bPx: 0 }];
   let lastB = 0;
   let droppedCount = 0;
   for (let i = 0; i < sorted.length; i++) {
@@ -106,11 +93,10 @@ export function buildMap(anchors, sMaxA, sMaxB) {
       droppedCount++;
     }
   }
-  pts.push({ aPx: sMaxA, bPx: sMaxB, snap: false });
+  pts.push({ aPx: sMaxA, bPx: sMaxB });
 
   let vCum = 0;
   const map = [];
-  const snapVs = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const aS = pts[i + 1].aPx - pts[i].aPx;
     const bS = pts[i + 1].bPx - pts[i].bPx;
@@ -123,14 +109,12 @@ export function buildMap(anchors, sMaxA, sMaxB) {
       bS: bS,
       vS: vS,
     });
-    if (pts[i].snap) snapVs.push(vCum);
     vCum += vS;
   }
 
   return {
     segments: map,
     vTotal: vCum,
-    snapVs: snapVs,
     droppedCount: droppedCount,
   };
 }
@@ -164,30 +148,6 @@ export function lookup(segments, from, to, value) {
   return seg[to] + t * seg[toS];
 }
 
-// ─── Helpers (not exported) ───
-
-function nearestSnap(snapVs, v) {
-  if (snapVs.length === 0) return null;
-  let lo = 0,
-    hi = snapVs.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (snapVs[mid] < v) lo = mid + 1;
-    else hi = mid;
-  }
-  let best = snapVs[lo];
-  if (lo > 0 && Math.abs(snapVs[lo - 1] - v) < Math.abs(best - v)) {
-    best = snapVs[lo - 1];
-  }
-  return best;
-}
-
-function smoothstep(t) {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-  return t * t * (3 - 2 * t);
-}
-
 // ─── Controller ───
 
 /**
@@ -196,8 +156,6 @@ function smoothstep(t) {
  * @example
  * const sync = new DualScrollSync(editor, preview, {
  *   getAnchors: function() { return headingAnchors(); },
- *   dampZonePx: 80,     // slow down near headings
- *   snapRangePx: 40,    // settle onto heading within 40px
  * });
  */
 export class DualScrollSync {
@@ -212,11 +170,6 @@ export class DualScrollSync {
     this.getAnchors = opts.getAnchors;
     this.onSync = opts.onSync || null;
     this.onMapBuilt = opts.onMapBuilt || null;
-    this.dampZonePx = opts.dampZonePx ?? 80;
-    this.dampMin = opts.dampMin ?? 0.15;
-    this.snapRangePx = opts.snapRangePx ?? 0;
-    this.snapDelayMs = opts.snapDelayMs ?? 200;
-    this.snapOffsetPx = opts.snapOffsetPx ?? 25;
     this.wheelSmooth = opts.wheelSmooth ?? 0.05;
     this.enabled = true;
 
@@ -236,8 +189,6 @@ export class DualScrollSync {
     this._expectedA = null;
     this._expectedB = null;
     this._lock = null;
-    this._snapTimer = null;
-    this._snapRafId = null;
     this._wheelRemaining = 0;
     this._wheelPumping = false;
 
@@ -274,7 +225,7 @@ export class DualScrollSync {
       try {
         this._data = buildMap(this.getAnchors(), sA, sB);
       } catch (e) {
-        this._data = { segments: [], vTotal: 0, snapVs: [] };
+        this._data = { segments: [], vTotal: 0 };
       }
       this._dirty = false;
       if (this.onMapBuilt) this.onMapBuilt(this._data);
@@ -284,7 +235,6 @@ export class DualScrollSync {
 
   /** Remove all event listeners and timers. */
   destroy() {
-    this._cancelSnap();
     this._wheelRemaining = 0;
     this.paneA.removeEventListener("scroll", this._onScrollA);
     this.paneB.removeEventListener("scroll", this._onScrollB);
@@ -325,9 +275,6 @@ export class DualScrollSync {
 
     if (this._lock && this._lock !== source) return;
 
-    // User-initiated scroll (not echo) → cancel any snap in progress
-    this._cancelSnap();
-
     const d = this.ensureMap();
     const segs = d.segments;
 
@@ -350,7 +297,6 @@ export class DualScrollSync {
     e.preventDefault();
     if (this.wheelSmooth >= 1) {
       this._handleWheel(e.deltaY);
-      this._scheduleSnap();
       return;
     }
     this._wheelRemaining += e.deltaY;
@@ -368,88 +314,16 @@ export class DualScrollSync {
         self._wheelRemaining -= delta;
         self._handleWheel(delta);
         if (Math.abs(self._wheelRemaining) >= 0.5) loop();
-        else {
-          self._wheelPumping = false;
-          self._scheduleSnap();
-        }
+        else self._wheelPumping = false;
       });
     })();
   }
 
-  /** @private Processing layer: apply delta through damping, update vCurrent, sync panes. */
+  /** @private Apply delta to vCurrent, sync panes. */
   _handleWheel(delta) {
     const d = this.ensureMap();
-
-    // Damping near snap anchors
-    if (this.dampZonePx > 0 && d.snapVs.length > 0) {
-      const off = this.snapOffsetPx;
-      const snap = nearestSnap(d.snapVs, this._vCurrent + off);
-      if (snap !== null) {
-        const target = Math.max(0, snap - off);
-        const dist = Math.abs(this._vCurrent - target);
-        if (dist < this.dampZonePx) {
-          delta *=
-            this.dampMin +
-            (1 - this.dampMin) * smoothstep(dist / this.dampZonePx);
-        }
-      }
-    }
-
     this._vCurrent = Math.max(0, Math.min(d.vTotal, this._vCurrent + delta));
     this._applyV();
-  }
-
-  /**
-   * Cancel any pending snap timer or animation.
-   * @private
-   */
-  _cancelSnap() {
-    if (this._snapTimer) {
-      clearTimeout(this._snapTimer);
-      this._snapTimer = null;
-    }
-    if (this._snapRafId) {
-      this._cancelFrame(this._snapRafId);
-      this._snapRafId = null;
-    }
-  }
-
-  /**
-   * Schedule a snap to the nearest anchor after wheel inactivity.
-   * Re-reads map and options at execution time (no stale closures).
-   * @private
-   */
-  _scheduleSnap() {
-    this._cancelSnap();
-    if (this.snapRangePx <= 0) return;
-
-    const self = this;
-    this._snapTimer = setTimeout(function () {
-      self._snapTimer = null;
-      const d = self.ensureMap();
-      if (d.snapVs.length === 0) return;
-
-      const off = self.snapOffsetPx;
-      const snap = nearestSnap(d.snapVs, self._vCurrent + off);
-      if (snap === null) return;
-      const target = Math.max(0, snap - off);
-      if (Math.abs(target - self._vCurrent) > self.snapRangePx) return;
-
-      const steps = 8;
-      let count = 0;
-      const startV = self._vCurrent;
-      (function frame() {
-        count++;
-        const t = smoothstep(count / steps);
-        self._vCurrent = startV + (target - startV) * t;
-        self._applyV();
-        if (count < steps) {
-          self._snapRafId = self._requestFrame(frame);
-        } else {
-          self._snapRafId = null;
-        }
-      })();
-    }, this.snapDelayMs);
   }
 }
 

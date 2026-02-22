@@ -1,5 +1,5 @@
 /**
- * dual-scroll-sync v9
+ * dual-scroll-sync v0.6.0
  *
  * Synchronized scrolling for two panes with different content heights.
  *
@@ -12,8 +12,6 @@ export interface Anchor {
   aPx: number;
   /** Pixel position in pane B (0 to scrollMaxB). */
   bPx: number;
-  /** If true, this anchor is a damping/snap target. */
-  snap?: boolean;
 }
 
 /** A segment in the scroll map. */
@@ -33,7 +31,7 @@ export interface Segment {
 }
 
 /** Axis key for position fields. */
-export type AxisPos = 'aPx' | 'bPx' | 'vPx';
+export type AxisPos = "aPx" | "bPx" | "vPx";
 
 /** Result of {@link buildMap}. */
 export interface MapData {
@@ -41,8 +39,6 @@ export interface MapData {
   segments: Segment[];
   /** Total virtual axis length (px). */
   vTotal: number;
-  /** Virtual axis positions of snap anchors (sorted). */
-  snapVs: number[];
   /** Number of anchors dropped due to non-monotonic bPx. */
   droppedCount: number;
 }
@@ -52,7 +48,11 @@ export interface ScrollPane {
   scrollTop: number;
   readonly scrollHeight: number;
   readonly clientHeight: number;
-  addEventListener(type: string, handler: (e: any) => void, options?: any): void;
+  addEventListener(
+    type: string,
+    handler: (e: any) => void,
+    options?: any,
+  ): void;
   removeEventListener(type: string, handler: (e: any) => void): void;
 }
 
@@ -64,17 +64,7 @@ export interface SyncOptions {
   onSync?: () => void;
   /** Called when the scroll map is rebuilt. */
   onMapBuilt?: (data: MapData) => void;
-  /** Damping radius around snap anchors (v-px). 0 = off. @default 80 */
-  dampZonePx?: number;
-  /** Minimum damping factor at snap center (0–1). @default 0.15 */
-  dampMin?: number;
-  /** Snap attraction range (v-px). 0 = off. @default 40 */
-  snapRangePx?: number;
-  /** Idle time before snap engages (ms). @default 200 */
-  snapDelayMs?: number;
-  /** V-px offset before anchor for snap landing position. @default 25 */
-  snapOffsetPx?: number;
-  /** Interpolation factor for wheel input (0–1). Each frame drains this fraction of remaining delta. 1 = instant. @default 0.3 */
+  /** Interpolation factor for wheel input (0–1). Each frame drains this fraction of remaining delta. 1 = instant. @default 0.05 */
   wheelSmooth?: number;
   /** Frame scheduler. Default: requestAnimationFrame (with setTimeout fallback). */
   requestFrame?: (callback: () => void) => number;
@@ -89,7 +79,11 @@ export interface SyncOptions {
  * @param sMaxA - scrollHeight − clientHeight of pane A.
  * @param sMaxB - scrollHeight − clientHeight of pane B.
  */
-export function buildMap(anchors: Anchor[], sMaxA: number, sMaxB: number): MapData;
+export function buildMap(
+  anchors: Anchor[],
+  sMaxA: number,
+  sMaxB: number,
+): MapData;
 
 /**
  * Look up a position on one axis given a position on another.
@@ -101,7 +95,12 @@ export function buildMap(anchors: Anchor[], sMaxA: number, sMaxB: number): MapDa
  *   out-of-range values are extrapolated, not clamped.
  * @returns Position on target axis (px).
  */
-export function lookup(segments: Segment[], from: AxisPos, to: AxisPos, value: number): number;
+export function lookup(
+  segments: Segment[],
+  from: AxisPos,
+  to: AxisPos,
+  value: number,
+): number;
 
 /**
  * Synchronized scrolling controller for two scrollable elements.
@@ -117,16 +116,6 @@ export class DualScrollSync {
   onSync: (() => void) | null;
   /** Callback on map rebuild. */
   onMapBuilt: ((data: MapData) => void) | null;
-  /** Damping zone radius (v-px). */
-  dampZonePx: number;
-  /** Minimum damping factor at snap center. */
-  dampMin: number;
-  /** Snap attraction range (v-px). */
-  snapRangePx: number;
-  /** Snap idle delay (ms). */
-  snapDelayMs: number;
-  /** Snap landing offset (v-px). */
-  snapOffsetPx: number;
   /** Wheel interpolation factor (0–1). */
   wheelSmooth: number;
   /** When false, all sync is suspended. */
