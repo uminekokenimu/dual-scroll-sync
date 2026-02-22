@@ -2,277 +2,137 @@
 
 Synchronized scrolling for two panes with different content heights.
 
-When two scrollable panes show related content (a source editor and its rendered preview, two files in a diff view, etc.), their total heights are almost never equal. **dual-scroll-sync** uses a ratio-normalized virtual axis to keep both panes in sync smoothly, treating them as equal citizens rather than making one follow the other.
+Each segment's virtual length is `vS = max(aS, bS)` — the pane with more content scrolls at normal speed, the other follows proportionally. Wheel input moves along the virtual axis in pixels, like normal browser scrolling.
 
-Zero dependencies. Framework-agnostic. ~490 lines of vanilla JavaScript.
-
-## Motivation
-
-Synchronizing scroll positions between two panes of different heights is a deceptively hard problem. A common approach is to pick one pane as "primary," find the corresponding position in the other pane, and set its `scrollTop` directly. This works in many cases, but has a few known challenges:
-
-- When one pane reaches its scroll limit before the other, the shorter side stops — even though the longer side still has content to show.
-- Setting `scrollTop` on one pane fires a scroll event, which tries to set the other, potentially causing oscillation.
-- Direct `scrollTop` assignment without animation can feel abrupt.
-
-**dual-scroll-sync** takes a different approach: instead of one pane driving the other, both panes derive their positions from a shared virtual scroll axis. This avoids the asymmetry and makes edge-of-scroll behavior more predictable.
-
-## What's New in 0.2.0
-
-**Snap anchors** let you mark certain anchor points (headings, tables, code blocks — whatever you choose) as "important." Near these points:
-
-- **Damping** — scroll input is reduced via smoothstep, making it easier to align panes at meaningful positions.
-- **Settle** — when scrolling stops near a snap anchor, a brief animation gently aligns to it.
-
-Both features are opt-in and backward compatible. Existing code without `snap` flags works exactly as before. Set `dampZoneFactor: 0` or `snapThreshold: 0` to disable either feature individually.
-
-## How It Works
-
-### Virtual Axis
-
-A single virtual axis controls both panes:
+## Install
 
 ```
-wheel δ  →  targetV += δ × damping
-                ↓
-          currentV ← LERP(currentV, targetV)     ← rAF loop
-                ↓
-          map.lookup(vS → aS)  →  paneA.scrollTop
-          map.lookup(vS → bS)  →  paneB.scrollTop
+npm install dual-scroll-sync
 ```
 
-### Ratio Normalization
-
-All positions are normalized to a `0–SCALE` ratio space:
-
-```
-aS = (paneA.scrollTop / paneA.scrollMax) × SCALE
-bS = (paneB.scrollTop / paneB.scrollMax) × SCALE
-```
-
-Both panes map to the same `[0, SCALE]` range regardless of pixel heights. The virtual tail is always `(SCALE, SCALE)`, so both panes reach their scroll limits at the same time.
-
-### Speed Ratio
-
-The virtual axis distance for each interval is:
-
-```
-vS_distance = max(aS_distance, bS_distance)
-```
-
-The longer side scrolls at full speed. The shorter side scrolls proportionally slower — but keeps moving. Both reach their ends together.
-
-### Scroll Map
-
-The map is a sparse array of anchor entries `{ aS, bS, vS, snap? }`:
-
-```
-Index    aS      bS      vS    snap
-  0       0       0       0
-  1    1200    3500    3500     true    ← heading
-  2    2500    4000    4800
-  ..
-  n   10000   10000   15200            ← tail (always SCALE, SCALE)
-```
-
-- `aS`, `bS`: positions in ratio space (0–SCALE)
-- `vS`: cumulative virtual position; `vS[i] = vS[i-1] + max(Δ aS, Δ bS)`
-- `snap`: if true, this entry is a damping/snap target
-- Lookups use binary search — O(log n) per query
-- The map is cached and rebuilt only when content or layout changes (dirty-flag)
-
-### Snap Damping
-
-When snap anchors are present, wheel input is reduced near them using a **smoothstep** curve:
-
-```
-Scroll ratio
-  1.0 ─────────╮                   ╭─────────
-               ╰─╮               ╭─╯
-  dampMin        ╰───────────────╯
-               ◄── dampZone ──►
-                    (anchor)
-```
-
-The damping zone width is defined as a multiple of the current wheel delta (`dampZoneFactor`), so it adapts to the user's input device — a mouse wheel with large deltas gets a proportionally wider zone than a trackpad with small deltas.
-
-### Snap Settle
-
-After LERP converges, if the current position is within `snapThreshold` of a snap anchor, the target is redirected to that anchor and LERP continues briefly. New wheel input cancels the snap immediately.
-
-### Circular Event Prevention
-
-Setting `scrollTop` on one pane fires a scroll event. To prevent infinite loops, we use an **expected-value pattern**: before setting `scrollTop`, we record the value. When the resulting scroll event fires, we check if the actual value matches what we set and skip the sync if so. This is deterministic and avoids timing-dependent workarounds.
-
-## Installation
-
-```bash
-# Install from GitHub
-npm install github:uminekokenimu/dual-scroll-sync
-
-# Or clone directly
-git clone https://github.com/uminekokenimu/dual-scroll-sync.git
-```
-
-Or just copy `src/index.js` into your project — it has zero dependencies:
-
-```html
-<script type="module">
-  import { DualScrollSync } from './path/to/dual-scroll-sync/src/index.js';
-</script>
-```
-
-## Quick Start
+## Usage
 
 ```js
 import { DualScrollSync } from 'dual-scroll-sync';
 
-const editor = document.getElementById('editor');
-const preview = document.getElementById('preview');
-
-// Your project provides this — maps a source line number to a pixel offset.
-// This example assumes a monospace <textarea> with fixed line height.
-function getEditorPixelForLine(line) {
-  const style = getComputedStyle(editor);
-  const lineHeight = parseFloat(style.lineHeight) || 20;
-  const paddingTop = parseFloat(style.paddingTop) || 0;
-  return paddingTop + (line - 1) * lineHeight;
-}
-
-const sync = new DualScrollSync(editor, preview, {
-  getAnchors: () => {
-    const edMax = Math.max(1, editor.scrollHeight - editor.clientHeight);
-    const pvMax = Math.max(1, preview.scrollHeight - preview.clientHeight);
-
-    // Anchor points from data-line attributes on rendered preview elements
-    return Array.from(preview.querySelectorAll('[data-line]')).map(el => ({
-      a: getEditorPixelForLine(+el.dataset.line) / edMax,
-      b: el.offsetTop / pvMax,
-      snap: /^H[1-6]$/.test(el.tagName) || el.tagName === 'TABLE',
+const sync = new DualScrollSync(editorPane, previewPane, {
+  getAnchors() {
+    return headings.map(h => ({
+      aPx: h.editorPx,
+      bPx: h.previewPx,
+      snap: true,
     }));
-  },
-  onSync: () => {
-    // Update line numbers, etc.
   },
 });
 
-// After content changes (and after async resources like images/fonts have loaded):
+// After content changes:
 sync.invalidate();
-
-// After programmatic jumps (e.g. TOC click):
-sync.resync();
 
 // Cleanup:
 sync.destroy();
 ```
 
-## API
+## Why anchor granularity matters
 
-### `new DualScrollSync(paneA, paneB, options)`
+Most scroll-sync implementations (including VSCode and Joplin) use **line numbers** as the intermediate representation. This works well when each markdown line produces a proportionally-sized HTML element, but breaks down when it doesn't:
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `getAnchors` | `() => {a, b, snap?}[]` | *required* | Returns anchor points. `a` and `b` are normalized positions (0–1) in each pane. `snap` marks as damping/snap target. |
-| `onSync` | `() => void` | `null` | Called after each synchronised scroll update. |
-| `lerp` | `number` | `0.18` | Smoothing factor. Lower = smoother but slower to converge. |
-| `epsilon` | `number` | `0.15` | Animation stops when residual drops below this. |
-| `scale` | `number` | `10000` | Internal ratio scale. No need to change this. |
-| `snapThreshold` | `number` | `0.001` | Snap range as fraction of scale. `0` = disabled. |
-| `dampZoneFactor` | `number` | `2.5` | Damping zone width as multiple of wheel delta. `0` = disabled. |
-| `dampMin` | `number` | `0.15` | Minimum scroll ratio on a snap anchor (0.0–1.0). |
-| `wheelScale` | `number` | `1.0` | Wheel input multiplier. Higher = faster scrolling. |
+- A single `| table |` line in markdown may render as a 500px table in preview
+- A `![image](...)` line may render as a 800px image
+- A fenced code block may have very different heights in editor vs preview
 
-### Instance Properties
+Line-based sync can only interpolate linearly between line boundaries, so scrolling through a large table in the editor causes the preview to jump past it.
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `.enabled` | `boolean` | `true` | Set to `false` to suspend all sync (useful when one pane is hidden). Set back to `true` and call `.invalidate()` to resume. |
-| `.snapThreshold` | `number` | | Writable for runtime tuning. |
-| `.dampZoneFactor` | `number` | | Writable for runtime tuning. |
-| `.dampMin` | `number` | | Writable for runtime tuning. |
-| `.wheelScale` | `number` | | Writable for runtime tuning. |
+**dual-scroll-sync uses pixel-position anchors instead of line numbers.** You can place anchors at any granularity — not just headings, but at table boundaries, image positions, code block edges, or any other block-level element. The more anchors you provide, the more precise the synchronization.
 
-### Instance Methods
-
-| Method | Description |
-|--------|-------------|
-| `.invalidate()` | Mark the scroll map for rebuild. Call after content changes, layout changes, window resize, or async resource loading (images, fonts, math rendering). |
-| `.resync()` | Re-derive the virtual axis from both panes' current scrollTop. Call after programmatic jumps that move both panes independently. |
-| `.scrollATo(px)` | Programmatically scroll pane A, syncing pane B. |
-| `.scrollBTo(px)` | Programmatically scroll pane B, syncing pane A. |
-| `.destroy()` | Remove all event listeners and stop animation. |
-
-### Low-level Exports
-
-The core functions are also exported for advanced use:
+### Block-level anchor example
 
 ```js
-import { buildMap, mapLookup } from 'dual-scroll-sync';
+function getAnchors() {
+  const anchors = [];
 
-const map = buildMap([
-  { a: 0.1, b: 0.3 },
-  { a: 0.5, b: 0.6, snap: true },
-  { a: 0.9, b: 0.95 },
-]);
+  // Headings — snap targets
+  preview.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(el => {
+    const line = Number(el.dataset.sourceLine);
+    anchors.push({
+      aPx: editor.lineToPixel(line),
+      bPx: el.offsetTop,
+      snap: true,
+    });
+  });
 
-const bS = mapLookup(map, 'aS', 'bS', 5000); // aS=5000 → bS=?
-```
+  // Tables — anchor both top and bottom edges
+  preview.querySelectorAll('table').forEach(el => {
+    const startLine = Number(el.dataset.sourceLine);
+    const endLine = Number(el.dataset.sourceLineEnd);
+    anchors.push(
+      { aPx: editor.lineToPixel(startLine), bPx: el.offsetTop },
+      { aPx: editor.lineToPixel(endLine),   bPx: el.offsetTop + el.offsetHeight },
+    );
+  });
 
-## Disabling Features
+  // Images
+  preview.querySelectorAll('img').forEach(el => {
+    const line = Number(el.dataset.sourceLine);
+    anchors.push(
+      { aPx: editor.lineToPixel(line),     bPx: el.offsetTop },
+      { aPx: editor.lineToPixel(line + 1), bPx: el.offsetTop + el.offsetHeight },
+    );
+  });
 
-```js
-// No damping, no snap — pure anchor-based sync (v0.1.0 behavior)
-const sync = new DualScrollSync(editorEl, previewEl, {
-  getAnchors: myAnchors,
-  dampZoneFactor: 0,
-  snapThreshold: 0,
-});
+  // Code blocks
+  preview.querySelectorAll('pre').forEach(el => {
+    const startLine = Number(el.dataset.sourceLine);
+    const endLine = Number(el.dataset.sourceLineEnd);
+    anchors.push(
+      { aPx: editor.lineToPixel(startLine), bPx: el.offsetTop },
+      { aPx: editor.lineToPixel(endLine),   bPx: el.offsetTop + el.offsetHeight },
+    );
+  });
 
-// Or simply omit snap from anchors — same effect
-getAnchors() {
-  return [{ a: 0.1, b: 0.15 }, { a: 0.5, b: 0.6 }];
+  return anchors;
 }
 ```
 
-## Use Cases
+With heading-only anchors, dual-scroll-sync behaves similarly to line-based approaches. With block-level anchors, it achieves substantially more precise synchronization — especially for documents with tables, images, and code blocks of varying heights.
 
-**Markdown / LaTeX / Typst editor + preview** — Anchor points come from source-line mappings (e.g., `data-line` attributes, SyncTeX, `typst query`). Snap on headings and tables for easy section alignment.
+## Options
 
-**Diff viewer** — Two files side by side. Anchors are placed at hunk boundaries.
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `getAnchors` | `() => Anchor[]` | *required* | Returns anchor points |
+| `onSync` | `() => void` | — | Called after each sync |
+| `onMapBuilt` | `(data) => void` | — | Called on map rebuild |
+| `wheelScale` | `number` | `1.0` | Wheel deltaY multiplier |
+| `dampZonePx` | `number` | `80` | Damping radius around snap anchors (v-px). `0` = off |
+| `dampMin` | `number` | `0.15` | Minimum damping factor at snap center (0–1) |
+| `snapRangePx` | `number` | `40` | Snap attraction range (v-px). `0` = off |
+| `snapDelayMs` | `number` | `200` | Idle time before snap (ms) |
+| `snapOffsetPx` | `number` | `25` | Snap landing offset (v-px before anchor) |
 
-**Translation editor** — Original and translated text. Anchors at paragraph or sentence boundaries.
+## API
 
-**Any dual-pane layout** — Anywhere two scrollable regions show related content at different heights.
+### `buildMap(anchors, sMaxA, sMaxB)`
 
-## Design Decisions
+Build a virtual-axis scroll map. Returns `{ segments, vTotal, snapVs }`.
 
-**Why a virtual axis instead of direct A→B mapping?**
-Direct mapping requires choosing which pane drives the other, creating asymmetry. The virtual axis treats both panes equally — the same `mapLookup` function works in both directions.
+### `lookup(segments, from, to, value)`
 
-**Why ratio normalization?**
-Pixel-based mapping breaks when pane heights differ significantly. Normalizing to 0–SCALE ensures the map always spans the full scroll range of both panes, and both reach their scroll limits simultaneously.
+Convert a position between axes (`'aPx'`, `'bPx'`, `'vPx'`). Caller must clamp `value` to valid range; out-of-range values are extrapolated, not clamped.
 
-**Why LERP?**
-Direct `scrollTop` assignment feels abrupt, especially when the mapping ratio changes sharply between intervals. LERP on the virtual axis smooths this out. Both panes animate together and arrive at their targets at the same time.
+### `DualScrollSync`
 
-**Why delta-relative damping zones?**
-A fixed damping zone (e.g. "50px worth of virtual axis") behaves differently depending on the input device — a mouse wheel with large deltas would fly through it, while a trackpad with small deltas would get stuck. By defining the zone as a multiple of the current delta, the damping feels consistent regardless of the device.
+- `invalidate()` — Mark map for rebuild
+- `ensureMap()` — Rebuild if dirty, return map data
+- `destroy()` — Remove listeners and timers
+- `enabled` — Set `false` to suspend sync
 
-**Why binary search?**
-The scroll map is sparse (typically 50–300 entries). Binary search keeps each lookup to ~8 comparisons. During active scrolling, the hot path is two lookups + two `scrollTop` assignments — well under 1ms per frame.
+## How it works
 
-## Examples
-
-The examples use ES module imports, so they need to be served over HTTP (not opened as local files). From the project root:
-
-```bash
-npx serve .
-# or: python3 -m http.server 8000
-```
-
-Then open `http://localhost:3000/examples/markdown.html` (or port 8000 for Python).
-
-- **`markdown.html`** — Markdown editor with live preview
-- **`diff-viewer.html`** — Side-by-side diff with hunk-aligned scrolling
+1. Anchors define corresponding positions in both panes
+2. Between anchors, each segment gets `vS = max(aS, bS)`
+3. Wheel delta maps 1:1 to v-axis pixels — the pane with more content in that segment scrolls at normal speed
+4. Optional damping (smoothstep) reduces scroll speed near snap anchors
+5. Optional snap settles to nearest anchor after wheel stops
 
 ## License
 

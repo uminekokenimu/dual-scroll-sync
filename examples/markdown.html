@@ -145,14 +145,11 @@ function updatePreview() {
 
 const sync = new DualScrollSync(editor, preview, {
   getAnchors: () => {
-    const edMax = Math.max(1, editor.scrollHeight - editor.clientHeight);
-    const pvMax = Math.max(1, preview.scrollHeight - preview.clientHeight);
-
     return Array.from(preview.querySelectorAll('[data-line]')).map(el => {
       const line = parseInt(el.dataset.line);
       return {
-        a: editorPixelAtLine(line) / edMax,
-        b: (el.getBoundingClientRect().top - preview.getBoundingClientRect().top + preview.scrollTop) / pvMax,
+        aPx: editorPixelAtLine(line),
+        bPx: el.getBoundingClientRect().top - preview.getBoundingClientRect().top + preview.scrollTop,
       };
     });
   },
@@ -176,8 +173,8 @@ Both panes derive their scroll positions from a single **virtual axis**. Neither
 
 ## Features
 
-- Ratio-normalized positions (0 to SCALE)
-- LERP animation for smooth scrolling
+- Pixel-based virtual axis (vS = max(aS, bS))
+- Immediate scroll application
 - Binary search O(log n) lookups
 - Dirty-flag map caching
 - Expected-value circular event prevention
@@ -188,11 +185,10 @@ Both panes derive their scroll positions from a single **virtual axis**. Neither
 \`\`\`javascript
 const sync = new DualScrollSync(editor, preview, {
   getAnchors: () => {
-    const edMax = editor.scrollHeight - editor.clientHeight;
-    const pvMax = preview.scrollHeight - preview.clientHeight;
-    return anchors.map(a => ({
-      a: a.editorPx / edMax,
-      b: a.previewPx / pvMax,
+    return headings.map(h => ({
+      aPx: h.editorPx,
+      bPx: h.previewPx,
+      snap: true,
     }));
   }
 });
@@ -219,25 +215,25 @@ This table takes more space in the preview than in the source:
 - VS Code: O(n) linear scan, no animation, asymmetric
 - Joplin: O(n) + IPC overhead, line-percent intermediate
 - StackEdit: O(n), one-way sync
-- dual-scroll-sync: O(log n), LERP animation, fully symmetric
+- dual-scroll-sync: O(log n), pixel-based virtual axis, fully symmetric
 
 ## Long Paragraphs
 
 The core insight is that scroll synchronization is fundamentally a problem of mapping between two different coordinate spaces. Traditional approaches pick one space as primary and derive the other, which introduces asymmetry and edge cases. The virtual axis approach creates a third, unified space that encompasses both, eliminating the asymmetry entirely.
 
-Ratio normalization ensures that both panes always map to the same range regardless of their actual pixel heights. This means the scroll map always starts at zero and ends at SCALE for both sides, making the end-of-scroll problem disappear without any special-case handling.
+The pixel-based virtual axis ensures that the pane with more content in each segment scrolls at normal speed, while the shorter pane follows proportionally. This eliminates the jarring jumps that ratio-based approaches suffer from when content heights are very different.
 
-The LERP animation operates on the virtual axis, not on individual pane positions. This means both panes animate smoothly and arrive at their targets at the same time, regardless of how different their scroll ranges are.
+Wheel input maps directly to virtual axis pixels. Combined with optional damping near snap anchors and snap-to-heading after scroll stops, this provides a natural, predictable scrolling experience.
 
 ## Ordered List
 
-1. Build anchor points from content
-2. Normalize to ratio space
-3. Construct virtual axis
-4. Handle wheel events on virtual axis
-5. LERP to target on each animation frame
-6. Look up both pane positions from virtual position
-7. Set scrollTop on both panes
+1. Build anchor points from content (pixel positions)
+2. Construct virtual axis (vS = max(aS, bS) per segment)
+3. Handle wheel events on virtual axis
+4. Look up both pane positions from virtual position
+5. Set scrollTop on both panes
+6. Optional: damping near snap anchors
+7. Optional: snap to nearest anchor after scroll stops
 
 ## Final Section
 

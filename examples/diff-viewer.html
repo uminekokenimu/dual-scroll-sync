@@ -220,16 +220,13 @@ const rightAnchors = renderSide(right, null, true);
 
 const sync = new DualScrollSync(left, right, {
   getAnchors: () => {
-    const aMax = Math.max(1, left.scrollHeight - left.clientHeight);
-    const bMax = Math.max(1, right.scrollHeight - right.clientHeight);
-
     const anchors = [];
     for (let i = 0; i < leftAnchors.length; i++) {
       const lEl = leftAnchors[i].el;
       const rEl = rightAnchors[i].el;
       anchors.push({
-        a: (lEl.offsetTop - left.firstElementChild.offsetHeight) / aMax,
-        b: (rEl.offsetTop - right.firstElementChild.offsetHeight) / bMax,
+        aPx: lEl.offsetTop - left.firstElementChild.offsetHeight,
+        bPx: rEl.offsetTop - right.firstElementChild.offsetHeight,
       });
     }
     return anchors;

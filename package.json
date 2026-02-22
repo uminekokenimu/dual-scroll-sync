@@ -1,38 +1,35 @@
 {
   "name": "dual-scroll-sync",
-  "version": "0.5.0",
-  "description": "Synchronized scrolling for two panes with different content heights, using a ratio-normalized virtual axis.",
+  "version": "0.6.0",
+  "description": "Synchronized scrolling for two panes with different content heights using a virtual axis",
   "main": "src/index.js",
-  "module": "src/index.js",
   "types": "src/index.d.ts",
   "type": "module",
   "exports": {
     ".": {
       "import": "./src/index.js",
-      "types": "./src/index.d.ts",
-      "default": "./src/index.js"
+      "types": "./src/index.d.ts"
     }
   },
   "files": [
-    "src/",
+    "src/index.js",
+    "src/index.d.ts",
     "README.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "scripts": {
+    "test": "node --test test/index.test.js",
+    "typecheck": "tsc --noEmit --strict --moduleResolution node --module esnext --target esnext --lib esnext,dom test/types.check.ts",
+    "lint": "eslint src/ test/",
+    "build:demo": "node scripts/build-demo.js"
+  },
   "keywords": [
-    "scroll-sync",
-    "synchronized-scroll",
-    "dual-pane",
     "scroll",
+    "sync",
+    "dual-pane",
     "markdown",
-    "latex",
-    "typst",
     "editor",
-    "preview",
-    "diff-viewer",
-    "virtual-axis",
-    "snap",
-    "damping"
+    "preview"
   ],
   "author": "uminekokenimu",
   "license": "MIT",
@@ -43,5 +40,8 @@
   "homepage": "https://github.com/uminekokenimu/dual-scroll-sync#readme",
   "bugs": {
     "url": "https://github.com/uminekokenimu/dual-scroll-sync/issues"
+  },
+  "devDependencies": {
+    "eslint": "^10.0.1"
   }
 }
