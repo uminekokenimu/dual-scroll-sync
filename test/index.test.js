@@ -945,3 +945,274 @@ describe('wheel.smooth validation', () => {
     s.destroy();
   });
 });
+
+// ─── scrollTo ───
+
+describe('scrollTo', () => {
+  let a, b;
+  beforeEach(() => {
+    a = mockPane(2000);
+    b = mockPane(3000);
+  });
+
+  test('scrollTo positions both panes correctly', () => {
+    const s = makeSync(a, b);
+    const d = s.ensureMap();
+    s.scrollTo(d.vTotal / 2);
+    near(s.vCurrent, d.vTotal / 2, 2);
+    assert.ok(a.scrollTop > 0, 'pane A should move');
+    assert.ok(b.scrollTop > 0, 'pane B should move');
+    s.destroy();
+  });
+
+  test('scrollTo clamps negative values to 0', () => {
+    const s = makeSync(a, b);
+    s.scrollTo(-100);
+    assert.equal(s.vCurrent, 0);
+    assert.equal(a.scrollTop, 0);
+    assert.equal(b.scrollTop, 0);
+    s.destroy();
+  });
+
+  test('scrollTo clamps values above vTotal', () => {
+    const s = makeSync(a, b);
+    const d = s.ensureMap();
+    s.scrollTo(d.vTotal + 1000);
+    near(s.vCurrent, d.vTotal, 2);
+    s.destroy();
+  });
+});
+
+// ─── vCurrent getter ───
+
+describe('vCurrent', () => {
+  test('reflects current position after scrollTo', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const s = makeSync(a, b);
+    assert.equal(s.vCurrent, 0);
+    s.ensureMap();
+    s.scrollTo(500);
+    assert.equal(s.vCurrent, 500);
+    near(s.vCurrent, deriveV(s), 2);
+    s.destroy();
+  });
+});
+
+// ─── post-destroy safety ───
+
+describe('post-destroy safety', () => {
+  let a, b;
+  beforeEach(() => {
+    a = mockPane(2000);
+    b = mockPane(3000);
+  });
+
+  test('scrollTo after destroy does not throw', () => {
+    const s = makeSync(a, b);
+    s.destroy();
+    assert.doesNotThrow(() => s.scrollTo(500));
+  });
+
+  test('ensureMap after destroy returns empty MapData', () => {
+    const s = makeSync(a, b);
+    s.destroy();
+    const d = s.ensureMap();
+    assert.deepEqual(d.segments, []);
+    assert.equal(d.vTotal, 0);
+  });
+
+  test('invalidate after destroy does not throw', () => {
+    const s = makeSync(a, b);
+    s.destroy();
+    assert.doesNotThrow(() => s.invalidate());
+  });
+
+  test('double destroy does not throw', () => {
+    const s = makeSync(a, b);
+    s.destroy();
+    assert.doesNotThrow(() => s.destroy());
+  });
+});
+
+// ─── pumpWheel enabled guard (coverage: lines 377-379) ───
+
+describe('pumpWheel enabled guard', () => {
+  test('pump callback exits early when enabled becomes false mid-pump', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const sched = syncScheduler();
+    const s = makeSync(a, b, {
+      wheel: { smooth: 0.5 },
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
+    });
+    s.ensureMap();
+    a._fire('wheel', wheelEvent(100));
+    assert.equal(sched.pending, 1);
+    // Disable without destroying (destroy would cancel the frame)
+    s.enabled = false;
+    sched.drain(1);
+    // Pump should NOT have scheduled another frame
+    assert.equal(sched.pending, 0);
+    assert.equal(a.scrollTop, 0);
+    assert.equal(b.scrollTop, 0);
+    s.destroy();
+  });
+});
+
+// ─── trySnap backward search (coverage: line 406) ───
+
+describe('trySnap backward search', () => {
+  test('snap finds anchor behind current position via backward search', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const sched = syncScheduler();
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 400, bPx: 800, snap: true }],
+      wheel: { smooth: 0.5, snap: 40 },
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
+    });
+    const d = s.ensureMap();
+    const anchorV = d.segments[1].vPx;
+    // Position 20px PAST the anchor
+    s.scrollTo(anchorV + 20);
+    // Fire tiny wheel event so pump starts, drains, and trySnap runs
+    a._fire('wheel', wheelEvent(1));
+    sched.drain();
+    // Should snap back to the anchor
+    near(deriveV(s), anchorV, 5);
+    s.destroy();
+  });
+});
+
+// ─── callSafe: callback exception safety ───
+
+describe('callback exception safety', () => {
+  test('onSync throw does not break #applying guard', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 200, bPx: 600 }],
+      onSync: () => { throw new Error('boom'); },
+      wheel: { smooth: 1 },
+    });
+    // scrollTo calls #applyV which calls onSync — should not throw
+    assert.doesNotThrow(() => s.scrollTo(100));
+    // Subsequent scroll events should still work (not stuck in #applying)
+    a.scrollTop = 50;
+    assert.doesNotThrow(() => a._fire('scroll'));
+    s.destroy();
+  });
+
+  test('onMapBuilt throw does not break ensureMap', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 200, bPx: 600 }],
+      onMapBuilt: () => { throw new Error('boom'); },
+      wheel: { smooth: 1 },
+    });
+    const d = s.ensureMap();
+    assert.ok(d.segments.length > 0, 'ensureMap should still return valid data');
+    assert.equal(d.droppedCount, 0);
+    s.destroy();
+  });
+});
+
+// ─── enabled setter: pump cleanup ───
+
+describe('enabled setter', () => {
+  test('enabled=false resets wheelRemaining and stops pump', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const sched = syncScheduler();
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 200, bPx: 600 }],
+      wheel: { smooth: 0.5 },
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
+    });
+    s.ensureMap();
+    // Start a pump
+    a._fire('wheel', wheelEvent(100));
+    assert.equal(sched.pending, 1);
+    // Disable — pump should be cancelled
+    s.enabled = false;
+    assert.equal(sched.pending, 0);
+    // Re-enable and scroll — should not jump from stale remainder
+    s.enabled = true;
+    s.scrollTo(0);
+    a._fire('wheel', wheelEvent(10));
+    sched.drain(1);
+    // Position should reflect only the new 10px delta, not the old 100
+    near(s.vCurrent, 5, 3); // 10 * 0.5 = 5
+    s.destroy();
+  });
+
+  test('enabled=false → true does not cause position jump', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const sched = syncScheduler();
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 200, bPx: 600 }],
+      wheel: { smooth: 0.5 },
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
+    });
+    s.scrollTo(500);
+    const posBeforeDisable = s.vCurrent;
+    // Pump some wheel delta, then disable mid-pump
+    a._fire('wheel', wheelEvent(200));
+    sched.drain(1);
+    s.enabled = false;
+    s.enabled = true;
+    // Position should not have jumped further
+    // (only the 1 frame drained before disable should have effect)
+    const posDelta = Math.abs(s.vCurrent - posBeforeDisable);
+    assert.ok(posDelta <= 100, `Position jumped too far: ${posDelta}`);
+    s.destroy();
+  });
+});
+
+// ─── lookup identity ───
+
+describe('lookup edge cases', () => {
+  test('lookup from===to returns identity', () => {
+    const { segments } = buildMap([{ aPx: 200, bPx: 600 }], 1000, 2000);
+    for (const v of [0, 100, 500, 1000]) {
+      near(lookup(segments, 'aPx', 'aPx', v), v, 0.01);
+    }
+  });
+});
+
+// ─── destroy: pane references retained ───
+
+describe('destroy pane references', () => {
+  test('paneA and paneB still reference original panes after destroy', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [],
+      wheel: { smooth: 1 },
+    });
+    assert.equal(s.paneA, a);
+    assert.equal(s.paneB, b);
+    s.destroy();
+    assert.equal(s.paneA, a);
+    assert.equal(s.paneB, b);
+  });
+});
+
+// ─── snap: false vs undefined equivalence ───
+
+describe('snap false vs undefined', () => {
+  test('snap: false and snap: undefined produce same result', () => {
+    const anchorsWithFalse = [{ aPx: 200, bPx: 600, snap: false }];
+    const anchorsWithUndef = [{ aPx: 200, bPx: 600 }];
+    const dFalse = buildMap(anchorsWithFalse, 1000, 2000);
+    const dUndef = buildMap(anchorsWithUndef, 1000, 2000);
+    assert.equal(dFalse.hasSnap, false);
+    assert.equal(dUndef.hasSnap, false);
+    assert.equal(dFalse.segments.length, dUndef.segments.length);
+    for (let i = 0; i < dFalse.segments.length; i++) {
+      assert.equal(dFalse.segments[i].aPx, dUndef.segments[i].aPx);
+      assert.equal(dFalse.segments[i].bPx, dUndef.segments[i].bPx);
+      assert.equal(dFalse.segments[i].vPx, dUndef.segments[i].vPx);
+      assert.equal(dFalse.segments[i].vS, dUndef.segments[i].vS);
+    }
+  });
+});

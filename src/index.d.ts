@@ -46,7 +46,9 @@ export class DualScrollSync {
     onMapBuilt: ((data: MapData) => void) | null;
     onError: ((error: unknown) => void) | null;
     alignOffset: number;
-    enabled: boolean;
+    set enabled(v: boolean);
+    /** Whether synchronization is active. */
+    get enabled(): boolean;
     wheel: {
         smooth: number;
         snap: number;
@@ -55,6 +57,8 @@ export class DualScrollSync {
             zone: number;
         } | null;
     };
+    /** Current virtual-axis scroll position (px). Read-only. */
+    get vCurrent(): number;
     /** Mark the scroll map for rebuild on next access. */
     invalidate(): void;
     /**
@@ -67,7 +71,7 @@ export class DualScrollSync {
      * @param {number} v - Virtual axis position (px). Clamped to [0, vTotal].
      */
     scrollTo(v: number): void;
-    /** Remove all event listeners and timers. */
+    /** Remove all event listeners and timers. Safe to call multiple times. */
     destroy(): void;
     #private;
 }

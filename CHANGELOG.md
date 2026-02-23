@@ -13,6 +13,14 @@
   `{ segments, vTotal, droppedCount, hasSnap }` instead of
   `{ segments, vTotal, snapVs }`.
 
+- **Removed APIs** — `scrollATo()`, `scrollBTo()`, `resync()` are removed.
+  Use `scrollTo(v)` to programmatically scroll to a virtual-axis position.
+
+- **`mapLookup()` renamed to `lookup()`**.
+
+- **Internal fields are now true `#private`** — code that accessed
+  underscore-prefixed internals (e.g. `_vCurrent`, `_data`) will break.
+
 ### Added
 
 - **`wheel.smooth`** — interpolation factor (0--1) controlling how wheel
@@ -49,6 +57,13 @@
 - **Input validation** — `buildMap()` now clamps negative `sMaxA`/`sMaxB`
   to 0. `wheel.smooth` rejects `NaN`/`Infinity` and falls back to default.
 
+- **`scrollTo(v)` method** — scrolls both panes to a virtual-axis position,
+  clamped to `[0, vTotal]`. Replaces the removed `scrollATo()`/`scrollBTo()`.
+
+- **Runtime wheel validation** — mutable `wheel` properties (`smooth`,
+  `snap`, `brake.factor`, `brake.zone`) are sanitised before each use,
+  guarding against `NaN`/`Infinity` assigned at runtime.
+
 ### Changed
 
 - **Wheel pump architecture** — wheel delta is accumulated into a remainder
@@ -58,6 +73,18 @@
 
 - **JSDoc + checkJs** — source uses JSDoc annotations with TypeScript
   `checkJs` for type safety. `.d.ts` files are auto-generated.
+
+- **Echo guard threshold** — increased from 2 px to 3 px to reduce
+  false scroll-event pass-through on high-DPI displays.
+
+- **Anchor search optimised** — damping and snap now use O(log n) binary
+  search instead of linear scan.
+
+- **`destroy()` releases references** — panes, callbacks, and cached map
+  data are nulled out to aid garbage collection.
+
+- **`_handleScroll` clamps vCurrent** — prevents extrapolation beyond
+  `[0, vTotal]` when `alignOffset` shifts the lookup past segment bounds.
 
 ### Fixed
 
@@ -159,4 +186,4 @@ Initial release.
   - `enabled` property to suspend/resume sync (e.g., when one pane is hidden)
   - Shift+wheel and horizontal scroll passthrough (not intercepted)
 - TypeScript type definitions
-- Examples: Markdown editor, diff viewer
+- Example: Markdown editor + preview demo

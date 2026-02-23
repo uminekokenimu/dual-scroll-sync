@@ -31,6 +31,19 @@ const PUMP_STOP_PX = 5;
 /** Threshold (px) for absorbing programmatic scroll echoes. */
 const ECHO_GUARD_PX = 3;
 
+/** Approximate pixels per line for deltaMode=1 (DOM_DELTA_LINE) conversion. */
+const PIXELS_PER_LINE = 16;
+
+// ─── Helpers ───
+
+/** Invoke a callback safely, swallowing any exception it throws.
+ * @param {Function | null | undefined} fn
+ * @param {unknown} [arg]
+ */
+function callSafe(fn, arg) {
+  try { if (fn) fn(arg); } catch (_) { /* user callback error */ }
+}
+
 // ─── Axis helpers ───
 
 /** @type {Readonly<Record<AxisPos, AxisSize>>} */
@@ -154,6 +167,8 @@ export class DualScrollSync {
   #pumpRafId = null;
   #snapping = false;
   #applying = false;
+  #destroyed = false;
+  #enabled = true;
   /** @type {() => void} */
   #onScrollA;
   /** @type {() => void} */
@@ -202,8 +217,28 @@ export class DualScrollSync {
     paneB.addEventListener("wheel", this.#onWheel, { passive: false });
   }
 
+  /** Current virtual-axis scroll position (px). Read-only. */
+  get vCurrent() {
+    return this.#vCurrent;
+  }
+
+  /** Whether synchronization is active. */
+  get enabled() { return this.#enabled; }
+  set enabled(v) {
+    this.#enabled = !!v;
+    if (!this.#enabled) {
+      this.#wheelRemaining = 0;
+      this.#snapping = false;
+      if (this.#pumpRafId !== null) {
+        this.#cancelFrame(this.#pumpRafId);
+        this.#pumpRafId = null;
+      }
+    }
+  }
+
   /** Mark the scroll map for rebuild on next access. */
   invalidate() {
+    if (this.#destroyed) return;
     this.#dirty = true;
   }
 
@@ -212,6 +247,7 @@ export class DualScrollSync {
    * @returns {MapData}
    */
   ensureMap() {
+    if (this.#destroyed) return { segments: [], vTotal: 0, droppedCount: 0, hasSnap: false };
     if (this.#dirty || !this.#data) {
       const sA = Math.max(0, this.paneA.scrollHeight - this.paneA.clientHeight);
       const sB = Math.max(0, this.paneB.scrollHeight - this.paneB.clientHeight);
@@ -219,10 +255,10 @@ export class DualScrollSync {
         this.#data = buildMap(this.getAnchors(), sA, sB);
       } catch (err) {
         this.#data = { segments: [], vTotal: 0, droppedCount: 0, hasSnap: false };
-        if (this.onError) this.onError(err);
+        callSafe(this.onError, err);
       }
       this.#dirty = false;
-      if (this.onMapBuilt) this.onMapBuilt(this.#data);
+      callSafe(this.onMapBuilt, this.#data);
     }
     return this.#data;
   }
@@ -232,28 +268,22 @@ export class DualScrollSync {
    * @param {number} v - Virtual axis position (px). Clamped to [0, vTotal].
    */
   scrollTo(v) {
+    if (this.#destroyed) return;
     const d = this.ensureMap();
     this.#vCurrent = Math.max(0, Math.min(d.vTotal, v));
     this.#applyV();
   }
 
-  /** Remove all event listeners and timers. */
+  /** Remove all event listeners and timers. Safe to call multiple times. */
   destroy() {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
     this.enabled = false;
-    this.#wheelRemaining = 0;
-    this.#snapping = false;
-    if (this.#pumpRafId !== null) {
-      this.#cancelFrame(this.#pumpRafId);
-      this.#pumpRafId = null;
-    }
     this.paneA.removeEventListener("scroll", this.#onScrollA);
     this.paneB.removeEventListener("scroll", this.#onScrollB);
     this.paneA.removeEventListener("wheel", this.#onWheel);
     this.paneB.removeEventListener("wheel", this.#onWheel);
-    this.paneA = /** @type {any} */ (null);
-    this.paneB = /** @type {any} */ (null);
     this.#data = null;
-    this.getAnchors = /** @type {any} */ (null);
     this.onSync = null;
     this.onMapBuilt = null;
     this.onError = null;
@@ -269,7 +299,7 @@ export class DualScrollSync {
     this.#expectedA = this.paneA.scrollTop;
     this.#expectedB = this.paneB.scrollTop;
     this.#applying = false;
-    if (this.onSync) this.onSync();
+    callSafe(this.onSync);
   }
 
   /**
@@ -297,7 +327,7 @@ export class DualScrollSync {
     tgtPane.scrollTop = lookup(segs, "vPx", isA ? "bPx" : "aPx", this.#vCurrent) - off;
     if (isA) this.#expectedB = tgtPane.scrollTop;
     else this.#expectedA = tgtPane.scrollTop;
-    if (this.onSync) this.onSync();
+    callSafe(this.onSync);
   }
 
   /** Sanitise mutable wheel properties before each use. */
@@ -323,7 +353,7 @@ export class DualScrollSync {
     e.preventDefault();
     this.#snapping = false;
     let dy = e.deltaY;
-    if (e.deltaMode === 1) dy *= 16;
+    if (e.deltaMode === 1) dy *= PIXELS_PER_LINE;
     else if (e.deltaMode === 2) dy *= this.paneA.clientHeight;
     if (this.wheel.smooth >= 1) {
       this.#handleWheel(dy);

@@ -12,10 +12,9 @@ npm install dual-scroll-sync
 
 ## Demo
 
-`examples/demo.html` is a markdown editor + preview demo with interactive scroll sync. Build first, then serve:
+`examples/demo.html` is a markdown editor + preview demo with interactive scroll sync:
 
 ```
-npm run build
 npm start
 ```
 
@@ -153,9 +152,11 @@ Convert a position between axes (`'aPx'`, `'bPx'`, `'vPx'`). Binary search + lin
 
 ### `DualScrollSync`
 
+- `vCurrent` — Current virtual-axis scroll position (px, read-only)
+- `scrollTo(v)` — Scroll both panes to virtual-axis position `v` (clamped to `[0, vTotal]`)
 - `invalidate()` — Mark map for rebuild
 - `ensureMap()` — Rebuild if dirty, return `MapData`
-- `destroy()` — Remove all listeners and timers
+- `destroy()` — Remove all listeners and timers. Safe to call repeatedly; further method calls become no-ops
 - `enabled` — Set `false` to suspend sync
 
 ## How it works

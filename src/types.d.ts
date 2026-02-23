@@ -56,12 +56,21 @@ export interface ScrollPane {
   scrollTop: number;
   readonly scrollHeight: number;
   readonly clientHeight: number;
+  addEventListener<K extends keyof HTMLElementEventMap>(
+    type: K,
+    handler: (e: HTMLElementEventMap[K]) => void,
+    options?: boolean | { capture?: boolean; passive?: boolean },
+  ): void;
   addEventListener(
     type: string,
-    handler: (e: any) => void,
-    options?: any,
+    handler: (e: Event) => void,
+    options?: boolean | { capture?: boolean; passive?: boolean },
   ): void;
-  removeEventListener(type: string, handler: (e: any) => void): void;
+  removeEventListener<K extends keyof HTMLElementEventMap>(
+    type: K,
+    handler: (e: HTMLElementEventMap[K]) => void,
+  ): void;
+  removeEventListener(type: string, handler: (e: Event) => void): void;
 }
 
 /** Anchor-proximity braking options. */

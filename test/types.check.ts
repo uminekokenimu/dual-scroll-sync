@@ -76,6 +76,8 @@ const opts: SyncOptions = {
 const sync = new DualScrollSync(pane, pane, opts);
 sync.invalidate();
 const map: MapData = sync.ensureMap();
+sync.scrollTo(500);
+const _v: number = sync.vCurrent;
 sync.enabled = false;
 sync.destroy();
 
@@ -84,4 +86,4 @@ import DefaultSync from "../src/index.js";
 const _sync2 = new DefaultSync(pane, pane, { getAnchors: () => [] });
 
 // Suppress unused warnings
-void [segments, vTotal, dropped, hasSnap, _aPx, _bPx, _vPx, _aS, _bS, _vS, _snap, result, _r2, map, _sync2];
+void [segments, vTotal, dropped, hasSnap, _aPx, _bPx, _vPx, _aS, _bS, _vS, _snap, result, _r2, map, _v, _sync2];
