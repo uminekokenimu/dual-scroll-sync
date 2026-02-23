@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "checkJs": true,
+    "allowJs": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "target": "esnext",
+    "lib": ["esnext", "dom"]
+  },
+  "include": ["src/index.js", "src/types.d.ts"]
+}

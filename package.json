@@ -1,38 +1,43 @@
 {
   "name": "dual-scroll-sync",
-  "version": "0.5.0",
-  "description": "Synchronized scrolling for two panes with different content heights, using a ratio-normalized virtual axis.",
+  "version": "0.6.0",
+  "description": "Synchronized scrolling for two panes with different content heights using a virtual axis",
   "main": "src/index.js",
-  "module": "src/index.js",
   "types": "src/index.d.ts",
   "type": "module",
   "exports": {
     ".": {
       "import": "./src/index.js",
-      "types": "./src/index.d.ts",
-      "default": "./src/index.js"
+      "types": "./src/index.d.ts"
     }
   },
   "files": [
-    "src/",
+    "src/index.js",
+    "src/index.d.ts",
+    "src/types.d.ts",
     "README.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "scripts": {
+    "test": "node --test test/index.test.js",
+    "typecheck": "tsc",
+    "generate:types": "node scripts/generate-types.js",
+    "check:types-fresh": "node scripts/generate-types.js && git diff --exit-code src/index.d.ts",
+    "lint": "eslint src/ test/",
+    "typecheck:test": "tsc --noEmit --strict --module esnext --moduleResolution node --target esnext --lib esnext,dom test/types.check.ts",
+    "build": "esbuild src/index.js --bundle --format=iife --global-name=DualScrollSync --outfile=dist/dual-scroll-sync.iife.js",
+    "build:min": "esbuild src/index.js --bundle --format=iife --global-name=DualScrollSync --minify --outfile=dist/dual-scroll-sync.iife.min.js",
+    "start": "npm run build && npx serve .",
+    "test:coverage": "node --test --experimental-test-coverage test/index.test.js",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run check:types-fresh"
+  },
   "keywords": [
-    "scroll-sync",
-    "synchronized-scroll",
-    "dual-pane",
     "scroll",
+    "sync",
+    "dual-pane",
     "markdown",
-    "latex",
-    "typst",
     "editor",
-    "preview",
-    "diff-viewer",
-    "virtual-axis",
-    "snap",
-    "damping"
+    "preview"
   ],
   "author": "uminekokenimu",
   "license": "MIT",
@@ -43,5 +48,10 @@
   "homepage": "https://github.com/uminekokenimu/dual-scroll-sync#readme",
   "bugs": {
     "url": "https://github.com/uminekokenimu/dual-scroll-sync/issues"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "eslint": "^10.0.1",
+    "typescript": "^5.9.3"
   }
 }

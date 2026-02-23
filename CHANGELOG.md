@@ -1,5 +1,96 @@
 # Changelog
 
+## 0.6.0 (2026-02-23)
+
+### Breaking changes
+
+- **Options restructured** — `wheelScale`, `dampZonePx`, `dampMin`,
+  `snapRangePx`, `snapDelayMs`, and `snapOffsetPx` are removed. Wheel
+  behavior is now configured through a nested `wheel` object with `smooth`,
+  `snap`, and `brake` sub-options.
+
+- **`buildMap()` return shape** — now returns
+  `{ segments, vTotal, droppedCount, hasSnap }` instead of
+  `{ segments, vTotal, snapVs }`.
+
+- **Removed APIs** — `scrollATo()`, `scrollBTo()`, `resync()` are removed.
+  Use `scrollTo(v)` to programmatically scroll to a virtual-axis position.
+
+- **`mapLookup()` renamed to `lookup()`**.
+
+- **Internal fields are now true `#private`** — code that accessed
+  underscore-prefixed internals (e.g. `_vCurrent`, `_data`) will break.
+
+### Added
+
+- **`wheel.smooth`** — interpolation factor (0--1) controlling how wheel
+  delta is drained across animation frames. `0` disables wheel handling
+  entirely, `1` applies delta instantly, fractional values produce smooth
+  interpolated scrolling via a rAF pump loop.
+
+- **`wheel.brake`** — anchor-proximity braking with smoothstep curve.
+  `brake.factor` sets the minimum drain-rate multiplier at an anchor,
+  `brake.zone` sets the radius (virtual px) where braking applies.
+
+- **`wheel.snap`** — snap-to-anchor after wheel pump stops. When position
+  is within `snap` virtual pixels of an anchor, scroll animates to it.
+  When any anchor has `snap: true`, only those anchors are snap targets.
+
+- **`alignOffset`** — viewport offset (px) for anchor alignment. Anchors
+  align this many pixels below the top of each pane.
+
+- **`onMapBuilt` callback** — called when the scroll map is rebuilt,
+  receives the `MapData` object.
+
+- **`onError` callback** — called when `getAnchors()` or `buildMap()`
+  throws during `ensureMap()`. If omitted, errors are silently ignored.
+
+- **`requestFrame` / `cancelFrame`** — dependency injection for the frame
+  scheduler, enabling deterministic testing without real rAF.
+
+- **`droppedCount`** in `MapData` — reports how many anchors were dropped
+  due to non-monotonic `bPx` values.
+
+- **`hasSnap`** in `MapData` — indicates whether any segment has a snap
+  target.
+
+- **Input validation** — `buildMap()` now clamps negative `sMaxA`/`sMaxB`
+  to 0. `wheel.smooth` rejects `NaN`/`Infinity` and falls back to default.
+
+- **`scrollTo(v)` method** — scrolls both panes to a virtual-axis position,
+  clamped to `[0, vTotal]`. Replaces the removed `scrollATo()`/`scrollBTo()`.
+
+- **Runtime wheel validation** — mutable `wheel` properties (`smooth`,
+  `snap`, `brake.factor`, `brake.zone`) are sanitised before each use,
+  guarding against `NaN`/`Infinity` assigned at runtime.
+
+### Changed
+
+- **Wheel pump architecture** — wheel delta is accumulated into a remainder
+  that drains across rAF frames via `smooth` factor, replacing the previous
+  LERP animation. The pump converges naturally and supports braking without
+  separate timers.
+
+- **JSDoc + checkJs** — source uses JSDoc annotations with TypeScript
+  `checkJs` for type safety. `.d.ts` files are auto-generated.
+
+- **Echo guard threshold** — increased from 2 px to 3 px to reduce
+  false scroll-event pass-through on high-DPI displays.
+
+- **Anchor search optimised** — damping and snap now use O(log n) binary
+  search instead of linear scan.
+
+- **`destroy()` releases references** — panes, callbacks, and cached map
+  data are nulled out to aid garbage collection.
+
+- **`#handleScroll` clamps vCurrent** — prevents extrapolation beyond
+  `[0, vTotal]` when `alignOffset` shifts the lookup past segment bounds.
+
+### Fixed
+
+- **Wheel pump convergence** — brake absorbs energy correctly, preventing
+  oscillation at anchor boundaries.
+
 ## 0.5.0 (2026-02-14)
 
 ### Changed
@@ -95,4 +186,4 @@ Initial release.
   - `enabled` property to suspend/resume sync (e.g., when one pane is hidden)
   - Shift+wheel and horizontal scroll passthrough (not intercepted)
 - TypeScript type definitions
-- Examples: Markdown editor, diff viewer
+- Example: Markdown editor + preview demo
