@@ -23,6 +23,7 @@ const sync = new DualScrollSync(editorPane, previewPane, {
       snap: true,
     }));
   },
+  wheel: { smooth: 0.1, snap: 60, brake: { factor: 0.2, zone: 80 } },
 });
 
 // After content changes:
@@ -99,31 +100,51 @@ With heading-only anchors, dual-scroll-sync behaves similarly to line-based appr
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `getAnchors` | `() => Anchor[]` | *required* | Returns anchor points |
-| `onSync` | `() => void` | — | Called after each sync |
-| `onMapBuilt` | `(data) => void` | — | Called on map rebuild |
-| `wheelScale` | `number` | `1.0` | Wheel deltaY multiplier |
-| `dampZonePx` | `number` | `80` | Damping radius around snap anchors (v-px). `0` = off |
-| `dampMin` | `number` | `0.15` | Minimum damping factor at snap center (0–1) |
-| `snapRangePx` | `number` | `40` | Snap attraction range (v-px). `0` = off |
-| `snapDelayMs` | `number` | `200` | Idle time before snap (ms) |
-| `snapOffsetPx` | `number` | `25` | Snap landing offset (v-px before anchor) |
+| `getAnchors` | `() => Anchor[]` | *required* | Returns anchor points. Called on each map rebuild. |
+| `onSync` | `() => void` | — | Called after each scroll synchronization. |
+| `onMapBuilt` | `(data: MapData) => void` | — | Called when the scroll map is rebuilt. |
+| `onError` | `(error: unknown) => void` | — | Called when `getAnchors()` throws during map rebuild. If omitted, errors are silently ignored and an empty map is used. |
+| `alignOffset` | `number` | `0` | Viewport offset (px). Anchors align this many pixels below the top of each pane. |
+| `wheel` | `WheelOptions` | `{ smooth: 0.1 }` | Wheel behavior (see below). |
+| `requestFrame` | `(cb) => number` | `requestAnimationFrame` | Frame scheduler override (useful for testing). |
+| `cancelFrame` | `(id) => void` | `cancelAnimationFrame` | Cancel a scheduled frame. |
+
+### Wheel options (`wheel`)
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `smooth` | `number` | `0.1` | Interpolation factor. `0` = wheel handling OFF (browser default), `1` = instant, `(0,1)` = smoothly interpolated across frames. |
+| `snap` | `number` | `0` | Snap-to-anchor distance (virtual px). After the wheel pump stops within this range of an anchor, scroll animates to it. `0` = disabled. |
+| `brake` | `WheelBrakeOptions` | — | Anchor proximity braking. Omit to disable. |
+
+### Brake options (`wheel.brake`)
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `factor` | `number` | Minimum drain-rate multiplier at an anchor (0--1). Lower = stronger braking. |
+| `zone` | `number` | Radius (virtual px) around each anchor where braking applies. |
 
 ## API
 
 ### `buildMap(anchors, sMaxA, sMaxB)`
 
-Build a virtual-axis scroll map. Returns `{ segments, vTotal, snapVs }`.
+Build a virtual-axis scroll map from anchor points. Negative `sMaxA`/`sMaxB` values are clamped to 0.
+
+Returns `{ segments, vTotal, droppedCount, hasSnap }`:
+- `segments` — Ordered array of `Segment` objects
+- `vTotal` — Total virtual axis length (px)
+- `droppedCount` — Number of anchors dropped due to non-monotonic `bPx`
+- `hasSnap` — Whether any segment has `snap: true`
 
 ### `lookup(segments, from, to, value)`
 
-Convert a position between axes (`'aPx'`, `'bPx'`, `'vPx'`). Caller must clamp `value` to valid range; out-of-range values are extrapolated, not clamped.
+Convert a position between axes (`'aPx'`, `'bPx'`, `'vPx'`). Binary search + linear interpolation. Caller must clamp `value` to valid range; out-of-range values are extrapolated, not clamped.
 
 ### `DualScrollSync`
 
 - `invalidate()` — Mark map for rebuild
-- `ensureMap()` — Rebuild if dirty, return map data
-- `destroy()` — Remove listeners and timers
+- `ensureMap()` — Rebuild if dirty, return `MapData`
+- `destroy()` — Remove all listeners and timers
 - `enabled` — Set `false` to suspend sync
 
 ## How it works
@@ -131,8 +152,8 @@ Convert a position between axes (`'aPx'`, `'bPx'`, `'vPx'`). Caller must clamp `
 1. Anchors define corresponding positions in both panes
 2. Between anchors, each segment gets `vS = max(aS, bS)`
 3. Wheel delta maps 1:1 to v-axis pixels — the pane with more content in that segment scrolls at normal speed
-4. Optional damping (smoothstep) reduces scroll speed near snap anchors
-5. Optional snap settles to nearest anchor after wheel stops
+4. Optional braking (smoothstep) reduces scroll speed near anchor boundaries (`wheel.brake`)
+5. Optional snap settles to nearest anchor after the wheel pump stops (`wheel.snap`)
 
 ## License
 

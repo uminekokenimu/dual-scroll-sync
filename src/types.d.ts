@@ -92,6 +92,10 @@ export interface SyncOptions {
   onSync?: () => void;
   /** Called when the scroll map is rebuilt. */
   onMapBuilt?: (data: MapData) => void;
+  /** Called when getAnchors() or buildMap() throws during ensureMap().
+   *  Receives the thrown error. If omitted, errors are silently ignored
+   *  and an empty map is used. */
+  onError?: (error: unknown) => void;
   /** Viewport offset (px) for anchor alignment. Anchors align this many
    *  pixels below the top of each pane. @default 0 */
   alignOffset?: number;

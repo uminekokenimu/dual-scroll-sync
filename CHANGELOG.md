@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.6.0 (2026-02-23)
+
+### Breaking changes
+
+- **Options restructured** — `wheelScale`, `dampZonePx`, `dampMin`,
+  `snapRangePx`, `snapDelayMs`, and `snapOffsetPx` are removed. Wheel
+  behavior is now configured through a nested `wheel` object with `smooth`,
+  `snap`, and `brake` sub-options.
+
+- **`buildMap()` return shape** — now returns
+  `{ segments, vTotal, droppedCount, hasSnap }` instead of
+  `{ segments, vTotal, snapVs }`.
+
+### Added
+
+- **`wheel.smooth`** — interpolation factor (0--1) controlling how wheel
+  delta is drained across animation frames. `0` disables wheel handling
+  entirely, `1` applies delta instantly, fractional values produce smooth
+  interpolated scrolling via a rAF pump loop.
+
+- **`wheel.brake`** — anchor-proximity braking with smoothstep curve.
+  `brake.factor` sets the minimum drain-rate multiplier at an anchor,
+  `brake.zone` sets the radius (virtual px) where braking applies.
+
+- **`wheel.snap`** — snap-to-anchor after wheel pump stops. When position
+  is within `snap` virtual pixels of an anchor, scroll animates to it.
+  When any anchor has `snap: true`, only those anchors are snap targets.
+
+- **`alignOffset`** — viewport offset (px) for anchor alignment. Anchors
+  align this many pixels below the top of each pane.
+
+- **`onMapBuilt` callback** — called when the scroll map is rebuilt,
+  receives the `MapData` object.
+
+- **`onError` callback** — called when `getAnchors()` or `buildMap()`
+  throws during `ensureMap()`. If omitted, errors are silently ignored.
+
+- **`requestFrame` / `cancelFrame`** — dependency injection for the frame
+  scheduler, enabling deterministic testing without real rAF.
+
+- **`droppedCount`** in `MapData` — reports how many anchors were dropped
+  due to non-monotonic `bPx` values.
+
+- **`hasSnap`** in `MapData` — indicates whether any segment has a snap
+  target.
+
+- **Input validation** — `buildMap()` now clamps negative `sMaxA`/`sMaxB`
+  to 0. `wheel.smooth` rejects `NaN`/`Infinity` and falls back to default.
+
+### Changed
+
+- **Wheel pump architecture** — wheel delta is accumulated into a remainder
+  that drains across rAF frames via `smooth` factor, replacing the previous
+  LERP animation. The pump converges naturally and supports braking without
+  separate timers.
+
+- **JSDoc + checkJs** — source uses JSDoc annotations with TypeScript
+  `checkJs` for type safety. `.d.ts` files are auto-generated.
+
+### Fixed
+
+- **Wheel pump convergence** — brake absorbs energy correctly, preventing
+  oscillation at anchor boundaries.
+
 ## 0.5.0 (2026-02-14)
 
 ### Changed

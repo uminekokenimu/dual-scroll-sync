@@ -836,3 +836,91 @@ describe('wheel snap', () => {
     s.destroy();
   });
 });
+
+// ─── buildMap input validation ───
+
+describe('buildMap input validation', () => {
+  test('negative sMaxA is clamped to 0', () => {
+    const { segments, vTotal } = buildMap([], -100, 500);
+    assert.equal(vTotal, 500);
+    assert.equal(segments.length, 1);
+    assert.equal(segments[0].aS, 0);
+    assert.equal(segments[0].bS, 500);
+  });
+
+  test('negative sMaxB is clamped to 0', () => {
+    const { segments, vTotal } = buildMap([], 500, -100);
+    assert.equal(vTotal, 500);
+    assert.equal(segments[0].aS, 500);
+    assert.equal(segments[0].bS, 0);
+  });
+
+  test('both negative → vTotal=0', () => {
+    const { vTotal } = buildMap([], -10, -20);
+    assert.equal(vTotal, 0);
+  });
+});
+
+// ─── onError callback ───
+
+describe('onError', () => {
+  let a, b;
+  beforeEach(() => {
+    a = mockPane(2000);
+    b = mockPane(3000);
+  });
+
+  test('onError receives exception from getAnchors', () => {
+    let captured = null;
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => { throw new Error('test-error'); },
+      wheel: { smooth: 1 },
+      onError: (err) => { captured = err; },
+    });
+    s.ensureMap();
+    assert.ok(captured instanceof Error);
+    assert.equal(captured.message, 'test-error');
+    s.destroy();
+  });
+
+  test('onError not called when getAnchors succeeds', () => {
+    let called = false;
+    const s = makeSync(a, b, { onError: () => { called = true; } });
+    s.ensureMap();
+    assert.equal(called, false);
+    s.destroy();
+  });
+
+  test('without onError, exception still produces empty map', () => {
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => { throw new Error('no-handler'); },
+      wheel: { smooth: 1 },
+    });
+    const d = s.ensureMap();
+    assert.deepEqual(d.segments, []);
+    assert.equal(d.vTotal, 0);
+    s.destroy();
+  });
+});
+
+// ─── wheel.smooth validation ───
+
+describe('wheel.smooth validation', () => {
+  let a, b;
+  beforeEach(() => {
+    a = mockPane(2000);
+    b = mockPane(3000);
+  });
+
+  test('NaN smooth falls back to default 0.1', () => {
+    const s = makeSync(a, b, { wheel: { smooth: NaN } });
+    assert.equal(s.wheel.smooth, 0.1);
+    s.destroy();
+  });
+
+  test('Infinity smooth falls back to default 0.1', () => {
+    const s = makeSync(a, b, { wheel: { smooth: Infinity } });
+    assert.equal(s.wheel.smooth, 0.1);
+    s.destroy();
+  });
+});

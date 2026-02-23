@@ -44,6 +44,7 @@ export class DualScrollSync {
     getAnchors: () => Anchor[];
     onSync: (() => void) | null;
     onMapBuilt: ((data: MapData) => void) | null;
+    onError: ((error: unknown) => void) | null;
     alignOffset: number;
     enabled: boolean;
     wheel: {

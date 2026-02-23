@@ -47,6 +47,8 @@ const SIZE_KEY = { aPx: "aS", bPx: "bS", vPx: "vS" };
  * @returns {MapData}
  */
 export function buildMap(anchors, sMaxA, sMaxB) {
+  sMaxA = Math.max(0, sMaxA);
+  sMaxB = Math.max(0, sMaxB);
   const sorted = anchors
     .map((e) => ({
       aPx: Math.max(0, Math.min(sMaxA, Math.round(e.aPx))),
@@ -146,13 +148,15 @@ export class DualScrollSync {
     this.getAnchors = opts.getAnchors;
     this.onSync = opts.onSync || null;
     this.onMapBuilt = opts.onMapBuilt || null;
+    this.onError = opts.onError || null;
     this.alignOffset = opts.alignOffset ?? 0;
     this.enabled = true;
 
     const wh = opts.wheel;
     const brake = wh?.brake;
+    const rawSmooth = wh?.smooth;
     this.wheel = {
-      smooth: wh?.smooth ?? 0.1,
+      smooth: typeof rawSmooth === "number" && isFinite(rawSmooth) ? rawSmooth : 0.1,
       snap: wh?.snap ?? 0,
       brake: brake ? { factor: brake.factor, zone: brake.zone } : null,
     };
@@ -218,8 +222,9 @@ export class DualScrollSync {
       const sB = Math.max(0, this.paneB.scrollHeight - this.paneB.clientHeight);
       try {
         this._data = buildMap(this.getAnchors(), sA, sB);
-      } catch {
+      } catch (err) {
         this._data = { segments: [], vTotal: 0, droppedCount: 0, hasSnap: false };
+        if (this.onError) this.onError(err);
       }
       this._dirty = false;
       if (this.onMapBuilt) this.onMapBuilt(this._data);
