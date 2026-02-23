@@ -16,7 +16,7 @@
 // ─── Pump threshold ───
 
 /** Remaining wheel delta below this value (px) ends the pump loop. */
-const PUMP_STOP_PX = 0.5;
+const PUMP_STOP_PX = 5;
 
 /** Threshold (px) for absorbing programmatic scroll echoes. */
 const ECHO_GUARD_PX = 2;
@@ -135,7 +135,7 @@ export class DualScrollSync {
 
     const w = opts.wheel ?? {};
     this.wheel = {
-      smooth: w.smooth ?? 0.05,
+      smooth: w.smooth ?? 0.1,
       brake: w.brake ? { factor: w.brake.factor, zone: w.brake.zone } : null,
     };
 
@@ -294,9 +294,9 @@ export class DualScrollSync {
         this._pumpRafId = null;
         return;
       }
-      const delta =
-        this._wheelRemaining * this.wheel.smooth * this._anchorDamping();
-      this._wheelRemaining -= delta;
+      const drain = this._wheelRemaining * this.wheel.smooth;
+      const delta = drain * this._anchorDamping();
+      this._wheelRemaining -= drain;
       this._handleWheel(delta);
       if (Math.abs(this._wheelRemaining) >= PUMP_STOP_PX) this._pumpWheel();
       else this._pumpRafId = null;

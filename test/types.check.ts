@@ -7,12 +7,12 @@ import type { Anchor, Segment, MapData, SyncOptions, AxisPos } from '../src/inde
 // ─── buildMap ───
 const anchors: Anchor[] = [
   { aPx: 100, bPx: 200 },
-  { aPx: 300, bPx: 600, snap: true },
+  { aPx: 300, bPx: 600 },
 ];
 const data: MapData = buildMap(anchors, 1000, 2000);
 const seg: Segment = data.segments[0];
 const v: number = data.vTotal;
-const snaps: number[] = data.snapVs;
+const dc: number = data.droppedCount;
 
 // ─── lookup ───
 const from: AxisPos = 'aPx';
@@ -28,11 +28,7 @@ const opts: SyncOptions = {
   getAnchors: () => anchors,
   onSync: () => {},
   onMapBuilt: (d: MapData) => { console.log(d.vTotal); },
-  dampZonePx: 80,
-  dampMin: 0.15,
-  snapRangePx: 40,
-  snapDelayMs: 200,
-  snapOffsetPx: 25,
+  wheel: { smooth: 0.08, brake: { factor: 0.2, zone: 100 } },
 };
 
 const sync: DualScrollSync = new DualScrollSync(paneA, paneB, opts);

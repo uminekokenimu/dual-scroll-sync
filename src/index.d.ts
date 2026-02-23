@@ -66,7 +66,7 @@ export interface WheelBrakeOptions {
 
 /** Wheel behavior options. */
 export interface WheelOptions {
-  /** Interpolation factor (0–1). 0 = OFF, 1 = instant, (0,1) = interpolated. @default 0.05 */
+  /** Interpolation factor (0–1). 0 = OFF, 1 = instant, (0,1) = interpolated. @default 0.1 */
   smooth: number;
   /** Anchor proximity braking. Omit to disable. */
   brake?: WheelBrakeOptions;
