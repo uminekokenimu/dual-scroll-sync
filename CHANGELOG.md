@@ -83,7 +83,7 @@
 - **`destroy()` releases references** — panes, callbacks, and cached map
   data are nulled out to aid garbage collection.
 
-- **`_handleScroll` clamps vCurrent** — prevents extrapolation beyond
+- **`#handleScroll` clamps vCurrent** — prevents extrapolation beyond
   `[0, vTotal]` when `alignOffset` shifts the lookup past segment bounds.
 
 ### Fixed

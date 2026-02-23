@@ -68,7 +68,10 @@ const opts: SyncOptions = {
   getAnchors: () => [anchor],
   onSync: () => {},
   onMapBuilt: (_d: MapData) => {},
+  onError: (_err: unknown) => {},
   alignOffset: 20,
+  requestFrame: (cb: () => void) => setTimeout(cb, 16),
+  cancelFrame: (id: number) => clearTimeout(id),
   wheel,
 };
 
