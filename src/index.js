@@ -36,6 +36,7 @@ export function buildMap(anchors, sMaxA, sMaxB) {
     .map((e) => ({
       aPx: Math.max(0, Math.min(sMaxA, Math.round(e.aPx))),
       bPx: Math.max(0, Math.min(sMaxB, Math.round(e.bPx))),
+      snap: e.snap,
     }))
     .sort((x, y) => x.aPx - y.aPx);
 
@@ -55,18 +56,14 @@ export function buildMap(anchors, sMaxA, sMaxB) {
 
   let vCum = 0;
   const map = [];
+  let hasSnap = false;
   for (let i = 0; i < pts.length - 1; i++) {
     const aS = pts[i + 1].aPx - pts[i].aPx;
     const bS = pts[i + 1].bPx - pts[i].bPx;
     const vS = Math.max(aS, bS);
-    map.push({
-      aPx: pts[i].aPx,
-      bPx: pts[i].bPx,
-      vPx: vCum,
-      aS,
-      bS,
-      vS,
-    });
+    const seg = { aPx: pts[i].aPx, bPx: pts[i].bPx, vPx: vCum, aS, bS, vS };
+    if (pts[i].snap) { seg.snap = true; hasSnap = true; }
+    map.push(seg);
     vCum += vS;
   }
 
@@ -74,6 +71,7 @@ export function buildMap(anchors, sMaxA, sMaxB) {
     segments: map,
     vTotal: vCum,
     droppedCount,
+    hasSnap,
   };
 }
 
@@ -116,7 +114,7 @@ export function lookup(segments, from, to, value) {
  * @example
  * const sync = new DualScrollSync(editor, preview, {
  *   getAnchors: () => headingAnchors(),
- *   wheel: { smooth: 0.08, brake: { factor: 0.2, zone: 100 } },
+ *   wheel: { smooth: 0.08, snap: 60, brake: { factor: 0.2, zone: 100 } },
  * });
  */
 export class DualScrollSync {
@@ -136,6 +134,7 @@ export class DualScrollSync {
     const w = opts.wheel ?? {};
     this.wheel = {
       smooth: w.smooth ?? 0.1,
+      snap: w.snap ?? 0,
       brake: w.brake ? { factor: w.brake.factor, zone: w.brake.zone } : null,
     };
 
@@ -153,6 +152,7 @@ export class DualScrollSync {
     this._expectedB = null;
     this._wheelRemaining = 0;
     this._pumpRafId = null;
+    this._snapping = false;
     this._applying = false;
 
     this._onScrollA = () => {
@@ -187,7 +187,7 @@ export class DualScrollSync {
       try {
         this._data = buildMap(this.getAnchors(), sA, sB);
       } catch {
-        this._data = { segments: [], vTotal: 0, droppedCount: 0 };
+        this._data = { segments: [], vTotal: 0, droppedCount: 0, hasSnap: false };
       }
       this._dirty = false;
       if (this.onMapBuilt) this.onMapBuilt(this._data);
@@ -199,6 +199,7 @@ export class DualScrollSync {
   destroy() {
     this.enabled = false;
     this._wheelRemaining = 0;
+    this._snapping = false;
     if (this._pumpRafId !== null) {
       this._cancelFrame(this._pumpRafId);
       this._pumpRafId = null;
@@ -261,6 +262,7 @@ export class DualScrollSync {
     if (e.deltaX !== 0 && e.deltaY === 0) return;
     if (this.wheel.smooth <= 0) return;
     e.preventDefault();
+    this._snapping = false;
     let dy = e.deltaY;
     if (e.deltaMode === 1) dy *= 16;
     else if (e.deltaMode === 2) dy *= this.paneA.clientHeight;
@@ -274,6 +276,7 @@ export class DualScrollSync {
 
   /** @private Compute anchor-proximity damping factor. */
   _anchorDamping() {
+    if (this._snapping) return 1;
     const brake = this.wheel.brake;
     if (!brake || brake.factor >= 1 || brake.zone <= 0) return 1;
     const { segments } = this.ensureMap();
@@ -299,8 +302,30 @@ export class DualScrollSync {
       this._wheelRemaining -= drain;
       this._handleWheel(delta);
       if (Math.abs(this._wheelRemaining) >= PUMP_STOP_PX) this._pumpWheel();
-      else this._pumpRafId = null;
+      else {
+        this._pumpRafId = null;
+        this._trySnap();
+      }
     });
+  }
+
+  /** @private Snap to nearest anchor if within range; reuses pump with damping bypass. */
+  _trySnap() {
+    if (this._snapping) { this._snapping = false; return; }
+    const { snap } = this.wheel;
+    if (!snap || !this._data) return;
+    const { segments, hasSnap } = this._data;
+    let nearest, minDist = Infinity;
+    for (let i = 0; i < segments.length; i++) {
+      if (hasSnap && !segments[i].snap) continue;
+      const d = Math.abs(this._vCurrent - segments[i].vPx);
+      if (d < minDist) { minDist = d; nearest = segments[i].vPx; }
+    }
+    if (minDist > 0 && minDist <= snap) {
+      this._snapping = true;
+      this._wheelRemaining = nearest - this._vCurrent;
+      this._pumpWheel();
+    }
   }
 
   /** @private Apply delta to vCurrent, sync panes. */

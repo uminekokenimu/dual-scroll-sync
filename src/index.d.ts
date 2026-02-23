@@ -12,6 +12,9 @@ export interface Anchor {
   aPx: number;
   /** Pixel position in pane B (0 to scrollMaxB). */
   bPx: number;
+  /** Mark this anchor as a snap target. When any anchor has snap: true,
+   *  only those anchors are considered for wheel snap. */
+  snap?: boolean;
 }
 
 /** A segment in the scroll map. */
@@ -28,6 +31,8 @@ export interface Segment {
   bS: number;
   /** Virtual axis segment length: max(aS, bS). */
   vS: number;
+  /** Whether the anchor at this segment's start is a snap target. */
+  snap?: boolean;
 }
 
 /** Axis key for position fields. */
@@ -41,6 +46,8 @@ export interface MapData {
   vTotal: number;
   /** Number of anchors dropped due to non-monotonic bPx. */
   droppedCount: number;
+  /** Whether any segment has snap: true. */
+  hasSnap: boolean;
 }
 
 /** Scrollable pane interface. Any object satisfying this contract works. */
@@ -68,6 +75,10 @@ export interface WheelBrakeOptions {
 export interface WheelOptions {
   /** Interpolation factor (0–1). 0 = OFF, 1 = instant, (0,1) = interpolated. @default 0.1 */
   smooth: number;
+  /** Snap-to-anchor distance (virtual px). When the wheel pump stops within
+   *  this range of an anchor, scroll animates to that anchor. 0 = disabled.
+   *  @default 0 */
+  snap?: number;
   /** Anchor proximity braking. Omit to disable. */
   brake?: WheelBrakeOptions;
 }
@@ -133,7 +144,7 @@ export class DualScrollSync {
   /** Callback on map rebuild. */
   onMapBuilt: ((data: MapData) => void) | null;
   /** Wheel behavior settings. */
-  wheel: { smooth: number; brake: WheelBrakeOptions | null };
+  wheel: { smooth: number; snap: number; brake: WheelBrakeOptions | null };
   /** When false, all sync is suspended. */
   enabled: boolean;
 

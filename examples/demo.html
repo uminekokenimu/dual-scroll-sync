@@ -323,321 +323,361 @@
     </footer>
     <script>
       // @@LIB-START@@
-    /**
-     * dual-scroll-sync v0.6.0
-     *
-     * Synchronized scrolling for two panes with different content heights.
-     *
-     * Each segment's virtual length is `vS = max(aS, bS)` — the pane with
-     * more content scrolls at normal speed; the other follows proportionally.
-     * Wheel input moves along the virtual axis in pixels: one notch moves
-     * the dominant pane exactly `deltaY` pixels, like normal browser scrolling.
-     *
-     * @module dual-scroll-sync
-     * @version 0.6.0
-     * @license MIT
-     */
-
-    // ─── Pump threshold ───
-
-    /** Remaining wheel delta below this value (px) ends the pump loop. */
-    const PUMP_STOP_PX = 5;
-
-    /** Threshold (px) for absorbing programmatic scroll echoes. */
-    const ECHO_GUARD_PX = 2;
-
-    // ─── Core ───
-
-    /**
-     * Build a virtual-axis scroll map from anchors.
-     *
-     * @param {import('./index.d.ts').Anchor[]} anchors
-     * @param {number} sMaxA - scrollHeight − clientHeight of pane A.
-     * @param {number} sMaxB - scrollHeight − clientHeight of pane B.
-     * @returns {import('./index.d.ts').MapData}
-     */
-    function buildMap(anchors, sMaxA, sMaxB) {
-      const sorted = anchors
-        .map((e) => ({
-          aPx: Math.max(0, Math.min(sMaxA, Math.round(e.aPx))),
-          bPx: Math.max(0, Math.min(sMaxB, Math.round(e.bPx))),
-        }))
-        .sort((x, y) => x.aPx - y.aPx);
-
-      const pts = [{ aPx: 0, bPx: 0 }];
-      let lastB = 0;
-      let droppedCount = 0;
-      for (let i = 0; i < sorted.length; i++) {
-        const e = sorted[i];
-        if (e.bPx >= lastB && e.aPx > pts[pts.length - 1].aPx) {
-          pts.push(e);
-          lastB = e.bPx;
-        } else {
-          droppedCount++;
-        }
-      }
-      pts.push({ aPx: sMaxA, bPx: sMaxB });
-
-      let vCum = 0;
-      const map = [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const aS = pts[i + 1].aPx - pts[i].aPx;
-        const bS = pts[i + 1].bPx - pts[i].bPx;
-        const vS = Math.max(aS, bS);
-        map.push({
-          aPx: pts[i].aPx,
-          bPx: pts[i].bPx,
-          vPx: vCum,
-          aS,
-          bS,
-          vS,
-        });
-        vCum += vS;
-      }
-
-      return {
-        segments: map,
-        vTotal: vCum,
-        droppedCount,
-      };
-    }
-
-    /**
-     * Look up a position on one axis given a position on another.
-     * Binary search + linear interpolation within the segment.
-     *
-     * @param {import('./index.d.ts').Segment[]} segments
-     * @param {"aPx"|"bPx"|"vPx"} from - Source axis.
-     * @param {"aPx"|"bPx"|"vPx"} to   - Target axis.
-     * @param {number} value  - Position on source axis (px). Caller must clamp
-     *   to valid range; out-of-range values are extrapolated, not clamped.
-     * @returns {number} Position on target axis (px).
-     */
-    function lookup(segments, from, to, value) {
-      if (segments.length === 0) return 0;
-
-      const fromS = from.charAt(0) + "S";
-      const toS = to.charAt(0) + "S";
-
-      let lo = 0,
-        hi = segments.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (segments[mid][from] <= value) lo = mid;
-        else hi = mid - 1;
-      }
-
-      const seg = segments[lo];
-      if (seg[fromS] <= 0) return seg[to];
-      const t = (value - seg[from]) / seg[fromS];
-      return seg[to] + t * seg[toS];
-    }
-
-    // ─── Controller ───
-
-    /**
-     * Synchronized scrolling controller for two scrollable elements.
-     *
-     * @example
-     * const sync = new DualScrollSync(editor, preview, {
-     *   getAnchors: () => headingAnchors(),
-     *   wheel: { smooth: 0.08, brake: { factor: 0.2, zone: 100 } },
-     * });
-     */
-    class DualScrollSync {
       /**
-       * @param {import('./index.d.ts').ScrollPane} paneA
-       * @param {import('./index.d.ts').ScrollPane} paneB
-       * @param {import('./index.d.ts').SyncOptions} opts
+       * dual-scroll-sync v0.6.0
+       *
+       * Synchronized scrolling for two panes with different content heights.
+       *
+       * Each segment's virtual length is `vS = max(aS, bS)` — the pane with
+       * more content scrolls at normal speed; the other follows proportionally.
+       * Wheel input moves along the virtual axis in pixels: one notch moves
+       * the dominant pane exactly `deltaY` pixels, like normal browser scrolling.
+       *
+       * @module dual-scroll-sync
+       * @version 0.6.0
+       * @license MIT
        */
-      constructor(paneA, paneB, opts) {
-        this.paneA = paneA;
-        this.paneB = paneB;
-        this.getAnchors = opts.getAnchors;
-        this.onSync = opts.onSync || null;
-        this.onMapBuilt = opts.onMapBuilt || null;
-        this.enabled = true;
 
-        const w = opts.wheel ?? {};
-        this.wheel = {
-          smooth: w.smooth ?? 0.1,
-          brake: w.brake ? { factor: w.brake.factor, zone: w.brake.zone } : null,
-        };
+      // ─── Pump threshold ───
 
-        const g = typeof globalThis !== "undefined" ? globalThis : {};
-        const raf = g.requestAnimationFrame;
-        const caf = g.cancelAnimationFrame;
-        this._requestFrame =
-          opts.requestFrame || (raf ? raf.bind(g) : (fn) => setTimeout(fn, 16));
-        this._cancelFrame = opts.cancelFrame || (caf ? caf.bind(g) : clearTimeout);
+      /** Remaining wheel delta below this value (px) ends the pump loop. */
+      const PUMP_STOP_PX = 5;
 
-        this._data = null;
-        this._dirty = true;
-        this._vCurrent = 0;
-        this._expectedA = null;
-        this._expectedB = null;
-        this._wheelRemaining = 0;
-        this._pumpRafId = null;
-        this._applying = false;
+      /** Threshold (px) for absorbing programmatic scroll echoes. */
+      const ECHO_GUARD_PX = 2;
 
-        this._onScrollA = () => {
-          this._handleScroll("a");
-        };
-        this._onScrollB = () => {
-          this._handleScroll("b");
-        };
-        this._onWheel = (e) => {
-          this._onWheelEvent(e);
-        };
-
-        paneA.addEventListener("scroll", this._onScrollA);
-        paneB.addEventListener("scroll", this._onScrollB);
-        paneA.addEventListener("wheel", this._onWheel, { passive: false });
-        paneB.addEventListener("wheel", this._onWheel, { passive: false });
-      }
-
-      /** Mark the scroll map for rebuild on next access. */
-      invalidate() {
-        this._dirty = true;
-      }
+      // ─── Core ───
 
       /**
-       * Ensure the scroll map is current.
+       * Build a virtual-axis scroll map from anchors.
+       *
+       * @param {import('./index.d.ts').Anchor[]} anchors
+       * @param {number} sMaxA - scrollHeight − clientHeight of pane A.
+       * @param {number} sMaxB - scrollHeight − clientHeight of pane B.
        * @returns {import('./index.d.ts').MapData}
        */
-      ensureMap() {
-        if (this._dirty || !this._data) {
-          const sA = Math.max(0, this.paneA.scrollHeight - this.paneA.clientHeight);
-          const sB = Math.max(0, this.paneB.scrollHeight - this.paneB.clientHeight);
-          try {
-            this._data = buildMap(this.getAnchors(), sA, sB);
-          } catch {
-            this._data = { segments: [], vTotal: 0, droppedCount: 0 };
+      function buildMap(anchors, sMaxA, sMaxB) {
+        const sorted = anchors
+          .map((e) => ({
+            aPx: Math.max(0, Math.min(sMaxA, Math.round(e.aPx))),
+            bPx: Math.max(0, Math.min(sMaxB, Math.round(e.bPx))),
+            snap: e.snap,
+          }))
+          .sort((x, y) => x.aPx - y.aPx);
+
+        const pts = [{ aPx: 0, bPx: 0 }];
+        let lastB = 0;
+        let droppedCount = 0;
+        for (let i = 0; i < sorted.length; i++) {
+          const e = sorted[i];
+          if (e.bPx >= lastB && e.aPx > pts[pts.length - 1].aPx) {
+            pts.push(e);
+            lastB = e.bPx;
+          } else {
+            droppedCount++;
           }
-          this._dirty = false;
-          if (this.onMapBuilt) this.onMapBuilt(this._data);
         }
-        return this._data;
-      }
+        pts.push({ aPx: sMaxA, bPx: sMaxB });
 
-      /** Remove all event listeners and timers. */
-      destroy() {
-        this.enabled = false;
-        this._wheelRemaining = 0;
-        if (this._pumpRafId !== null) {
-          this._cancelFrame(this._pumpRafId);
-          this._pumpRafId = null;
+        let vCum = 0;
+        const map = [];
+        let hasSnap = false;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const aS = pts[i + 1].aPx - pts[i].aPx;
+          const bS = pts[i + 1].bPx - pts[i].bPx;
+          const vS = Math.max(aS, bS);
+          const seg = { aPx: pts[i].aPx, bPx: pts[i].bPx, vPx: vCum, aS, bS, vS };
+          if (pts[i].snap) { seg.snap = true; hasSnap = true; }
+          map.push(seg);
+          vCum += vS;
         }
-        this.paneA.removeEventListener("scroll", this._onScrollA);
-        this.paneB.removeEventListener("scroll", this._onScrollB);
-        this.paneA.removeEventListener("wheel", this._onWheel);
-        this.paneB.removeEventListener("wheel", this._onWheel);
+
+        return {
+          segments: map,
+          vTotal: vCum,
+          droppedCount,
+          hasSnap,
+        };
       }
 
-      /** @private Set both panes from _vCurrent. */
-      _applyV() {
-        this._applying = true;
-        const segs = this._data.segments;
-        this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
-        this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
-        this._expectedA = this.paneA.scrollTop;
-        this._expectedB = this.paneB.scrollTop;
-        this._applying = false;
-        if (this.onSync) this.onSync();
+      /**
+       * Look up a position on one axis given a position on another.
+       * Binary search + linear interpolation within the segment.
+       *
+       * @param {import('./index.d.ts').Segment[]} segments
+       * @param {"aPx"|"bPx"|"vPx"} from - Source axis.
+       * @param {"aPx"|"bPx"|"vPx"} to   - Target axis.
+       * @param {number} value  - Position on source axis (px). Caller must clamp
+       *   to valid range; out-of-range values are extrapolated, not clamped.
+       * @returns {number} Position on target axis (px).
+       */
+      function lookup(segments, from, to, value) {
+        if (segments.length === 0) return 0;
+
+        const fromS = from.charAt(0) + "S";
+        const toS = to.charAt(0) + "S";
+
+        let lo = 0,
+          hi = segments.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (segments[mid][from] <= value) lo = mid;
+          else hi = mid - 1;
+        }
+
+        const seg = segments[lo];
+        if (seg[fromS] <= 0) return seg[to];
+        const t = (value - seg[from]) / seg[fromS];
+        return seg[to] + t * seg[toS];
       }
 
-      /** @private Handle native scroll event; absorb echoes and sync the opposite pane. */
-      _handleScroll(source) {
-        if (!this.enabled || this._applying) return;
+      // ─── Controller ───
 
-        if (source === "a" && this._expectedA !== null) {
-          if (Math.abs(this.paneA.scrollTop - this._expectedA) < ECHO_GUARD_PX) {
-            this._expectedA = null;
-            return;
-          }
+      /**
+       * Synchronized scrolling controller for two scrollable elements.
+       *
+       * @example
+       * const sync = new DualScrollSync(editor, preview, {
+       *   getAnchors: () => headingAnchors(),
+       *   wheel: { smooth: 0.08, brake: { factor: 0.2, zone: 100 } },
+       * });
+       */
+      class DualScrollSync {
+        /**
+         * @param {import('./index.d.ts').ScrollPane} paneA
+         * @param {import('./index.d.ts').ScrollPane} paneB
+         * @param {import('./index.d.ts').SyncOptions} opts
+         */
+        constructor(paneA, paneB, opts) {
+          this.paneA = paneA;
+          this.paneB = paneB;
+          this.getAnchors = opts.getAnchors;
+          this.onSync = opts.onSync || null;
+          this.onMapBuilt = opts.onMapBuilt || null;
+          this.enabled = true;
+
+          const w = opts.wheel ?? {};
+          this.wheel = {
+            smooth: w.smooth ?? 0.1,
+            snap: w.snap ?? 0,
+            brake: w.brake ? { factor: w.brake.factor, zone: w.brake.zone } : null,
+          };
+
+          const g = typeof globalThis !== "undefined" ? globalThis : {};
+          const raf = g.requestAnimationFrame;
+          const caf = g.cancelAnimationFrame;
+          this._requestFrame =
+            opts.requestFrame ||
+            (raf ? raf.bind(g) : (fn) => setTimeout(fn, 16));
+          this._cancelFrame =
+            opts.cancelFrame || (caf ? caf.bind(g) : clearTimeout);
+
+          this._data = null;
+          this._dirty = true;
+          this._vCurrent = 0;
           this._expectedA = null;
-        }
-        if (source === "b" && this._expectedB !== null) {
-          if (Math.abs(this.paneB.scrollTop - this._expectedB) < ECHO_GUARD_PX) {
-            this._expectedB = null;
-            return;
-          }
           this._expectedB = null;
+          this._wheelRemaining = 0;
+          this._pumpRafId = null;
+          this._snapping = false;
+          this._applying = false;
+
+          this._onScrollA = () => {
+            this._handleScroll("a");
+          };
+          this._onScrollB = () => {
+            this._handleScroll("b");
+          };
+          this._onWheel = (e) => {
+            this._onWheelEvent(e);
+          };
+
+          paneA.addEventListener("scroll", this._onScrollA);
+          paneB.addEventListener("scroll", this._onScrollB);
+          paneA.addEventListener("wheel", this._onWheel, { passive: false });
+          paneB.addEventListener("wheel", this._onWheel, { passive: false });
         }
 
-        const segs = this.ensureMap().segments;
-        if (segs.length === 0) return;
-
-        if (source === "a") {
-          this._vCurrent = lookup(segs, "aPx", "vPx", this.paneA.scrollTop);
-          this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
-          this._expectedB = this.paneB.scrollTop;
-        } else {
-          this._vCurrent = lookup(segs, "bPx", "vPx", this.paneB.scrollTop);
-          this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
-          this._expectedA = this.paneA.scrollTop;
+        /** Mark the scroll map for rebuild on next access. */
+        invalidate() {
+          this._dirty = true;
         }
-        if (this.onSync) this.onSync();
-      }
 
-      /** @private Validate wheel event, preventDefault, and dispatch delta. */
-      _onWheelEvent(e) {
-        if (!this.enabled || e.shiftKey || e.ctrlKey || e.metaKey) return;
-        if (e.deltaX !== 0 && e.deltaY === 0) return;
-        if (this.wheel.smooth <= 0) return;
-        e.preventDefault();
-        let dy = e.deltaY;
-        if (e.deltaMode === 1) dy *= 16;
-        else if (e.deltaMode === 2) dy *= this.paneA.clientHeight;
-        if (this.wheel.smooth >= 1) {
-          this._handleWheel(dy);
-          return;
+        /**
+         * Ensure the scroll map is current.
+         * @returns {import('./index.d.ts').MapData}
+         */
+        ensureMap() {
+          if (this._dirty || !this._data) {
+            const sA = Math.max(
+              0,
+              this.paneA.scrollHeight - this.paneA.clientHeight,
+            );
+            const sB = Math.max(
+              0,
+              this.paneB.scrollHeight - this.paneB.clientHeight,
+            );
+            try {
+              this._data = buildMap(this.getAnchors(), sA, sB);
+            } catch {
+              this._data = { segments: [], vTotal: 0, droppedCount: 0, hasSnap: false };
+            }
+            this._dirty = false;
+            if (this.onMapBuilt) this.onMapBuilt(this._data);
+          }
+          return this._data;
         }
-        this._wheelRemaining += dy;
-        if (this._pumpRafId === null) this._pumpWheel();
-      }
 
-      /** @private Compute anchor-proximity damping factor. */
-      _anchorDamping() {
-        const brake = this.wheel.brake;
-        if (!brake || brake.factor >= 1 || brake.zone <= 0) return 1;
-        const { segments } = this.ensureMap();
-        const v = this._vCurrent;
-        let minDist = Infinity;
-        for (let i = 0; i < segments.length; i++) {
-          minDist = Math.min(minDist, Math.abs(v - segments[i].vPx));
-        }
-        const t = Math.min(minDist / brake.zone, 1);
-        const s = t * t * (3 - 2 * t);
-        return brake.factor + (1 - brake.factor) * s;
-      }
-
-      /** @private Drain _wheelRemaining across rAF frames. */
-      _pumpWheel() {
-        this._pumpRafId = this._requestFrame(() => {
-          if (!this.enabled) {
+        /** Remove all event listeners and timers. */
+        destroy() {
+          this.enabled = false;
+          this._wheelRemaining = 0;
+          this._snapping = false;
+          if (this._pumpRafId !== null) {
+            this._cancelFrame(this._pumpRafId);
             this._pumpRafId = null;
+          }
+          this.paneA.removeEventListener("scroll", this._onScrollA);
+          this.paneB.removeEventListener("scroll", this._onScrollB);
+          this.paneA.removeEventListener("wheel", this._onWheel);
+          this.paneB.removeEventListener("wheel", this._onWheel);
+        }
+
+        /** @private Set both panes from _vCurrent. */
+        _applyV() {
+          this._applying = true;
+          const segs = this._data.segments;
+          this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
+          this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
+          this._expectedA = this.paneA.scrollTop;
+          this._expectedB = this.paneB.scrollTop;
+          this._applying = false;
+          if (this.onSync) this.onSync();
+        }
+
+        /** @private Handle native scroll event; absorb echoes and sync the opposite pane. */
+        _handleScroll(source) {
+          if (!this.enabled || this._applying) return;
+
+          if (source === "a" && this._expectedA !== null) {
+            if (
+              Math.abs(this.paneA.scrollTop - this._expectedA) < ECHO_GUARD_PX
+            ) {
+              this._expectedA = null;
+              return;
+            }
+            this._expectedA = null;
+          }
+          if (source === "b" && this._expectedB !== null) {
+            if (
+              Math.abs(this.paneB.scrollTop - this._expectedB) < ECHO_GUARD_PX
+            ) {
+              this._expectedB = null;
+              return;
+            }
+            this._expectedB = null;
+          }
+
+          const segs = this.ensureMap().segments;
+          if (segs.length === 0) return;
+
+          if (source === "a") {
+            this._vCurrent = lookup(segs, "aPx", "vPx", this.paneA.scrollTop);
+            this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
+            this._expectedB = this.paneB.scrollTop;
+          } else {
+            this._vCurrent = lookup(segs, "bPx", "vPx", this.paneB.scrollTop);
+            this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
+            this._expectedA = this.paneA.scrollTop;
+          }
+          if (this.onSync) this.onSync();
+        }
+
+        /** @private Validate wheel event, preventDefault, and dispatch delta. */
+        _onWheelEvent(e) {
+          if (!this.enabled || e.shiftKey || e.ctrlKey || e.metaKey) return;
+          if (e.deltaX !== 0 && e.deltaY === 0) return;
+          if (this.wheel.smooth <= 0) return;
+          e.preventDefault();
+          this._snapping = false;
+          let dy = e.deltaY;
+          if (e.deltaMode === 1) dy *= 16;
+          else if (e.deltaMode === 2) dy *= this.paneA.clientHeight;
+          if (this.wheel.smooth >= 1) {
+            this._handleWheel(dy);
             return;
           }
-          const drain = this._wheelRemaining * this.wheel.smooth;
-          const delta = drain * this._anchorDamping();
-          this._wheelRemaining -= drain;
-          this._handleWheel(delta);
-          if (Math.abs(this._wheelRemaining) >= PUMP_STOP_PX) this._pumpWheel();
-          else this._pumpRafId = null;
-        });
+          this._wheelRemaining += dy;
+          if (this._pumpRafId === null) this._pumpWheel();
+        }
+
+        /** @private Compute anchor-proximity damping factor. */
+        _anchorDamping() {
+          if (this._snapping) return 1;
+          const brake = this.wheel.brake;
+          if (!brake || brake.factor >= 1 || brake.zone <= 0) return 1;
+          const { segments } = this.ensureMap();
+          const v = this._vCurrent;
+          let minDist = Infinity;
+          for (let i = 0; i < segments.length; i++) {
+            minDist = Math.min(minDist, Math.abs(v - segments[i].vPx));
+          }
+          const t = Math.min(minDist / brake.zone, 1);
+          const s = t * t * (3 - 2 * t);
+          return brake.factor + (1 - brake.factor) * s;
+        }
+
+        /** @private Drain _wheelRemaining across rAF frames. */
+        _pumpWheel() {
+          this._pumpRafId = this._requestFrame(() => {
+            if (!this.enabled) {
+              this._pumpRafId = null;
+              return;
+            }
+            const drain = this._wheelRemaining * this.wheel.smooth;
+            const delta = drain * this._anchorDamping();
+            this._wheelRemaining -= drain;
+            this._handleWheel(delta);
+            if (Math.abs(this._wheelRemaining) >= PUMP_STOP_PX)
+              this._pumpWheel();
+            else {
+              this._pumpRafId = null;
+              this._trySnap();
+            }
+          });
+        }
+
+        /** @private Snap to nearest anchor if within range; reuses pump with damping bypass. */
+        _trySnap() {
+          if (this._snapping) { this._snapping = false; return; }
+          const { snap } = this.wheel;
+          if (!snap || !this._data) return;
+          const { segments, hasSnap } = this._data;
+          let nearest, minDist = Infinity;
+          for (let i = 0; i < segments.length; i++) {
+            if (hasSnap && !segments[i].snap) continue;
+            const d = Math.abs(this._vCurrent - segments[i].vPx);
+            if (d < minDist) { minDist = d; nearest = segments[i].vPx; }
+          }
+          if (minDist > 0 && minDist <= snap) {
+            this._snapping = true;
+            this._wheelRemaining = nearest - this._vCurrent;
+            this._pumpWheel();
+          }
+        }
+
+        /** @private Apply delta to vCurrent, sync panes. */
+        _handleWheel(delta) {
+          const d = this.ensureMap();
+          this._vCurrent = Math.max(
+            0,
+            Math.min(d.vTotal, this._vCurrent + delta),
+          );
+          this._applyV();
+        }
       }
 
-      /** @private Apply delta to vCurrent, sync panes. */
-      _handleWheel(delta) {
-        const d = this.ensureMap();
-        this._vCurrent = Math.max(0, Math.min(d.vTotal, this._vCurrent + delta));
-        this._applyV();
-      }
-    }
-
-
-    // @@LIB-END@@
+      // @@LIB-END@@
 
       // === Markdown Parser ===
 
@@ -781,6 +821,7 @@
             anchors.push({
               aPx: Math.round(charY(cp)),
               bPx: Math.round(elemY(headings[hIdx])),
+              snap: true,
             });
             hIdx++;
           }
@@ -1073,7 +1114,7 @@
           getAnchors: function () {
             return getAnchors(ep, pp, edEl, pvEl);
           },
-          wheel: { smooth: 0.1, brake: { factor: 0.2, zone: 80 } },
+          wheel: { smooth: 0.1, snap: 60, brake: { factor: 0.2, zone: 80 } },
           onMapBuilt: function (d) {
             updateInd(d);
           },
