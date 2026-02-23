@@ -26,7 +26,10 @@
     "lint": "eslint src/ test/",
     "typecheck:test": "tsc --noEmit --strict --module esnext --moduleResolution node --target esnext --lib esnext,dom test/types.check.ts",
     "build": "esbuild src/index.js --bundle --format=iife --global-name=DualScrollSync --outfile=dist/dual-scroll-sync.iife.js",
-    "start": "npm run build && npx serve ."
+    "build:min": "esbuild src/index.js --bundle --format=iife --global-name=DualScrollSync --minify --outfile=dist/dual-scroll-sync.iife.min.js",
+    "start": "npm run build && npx serve .",
+    "test:coverage": "node --test --experimental-test-coverage test/index.test.js",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run check:types-fresh"
   },
   "keywords": [
     "scroll",
