@@ -13,6 +13,16 @@
  * @license MIT
  */
 
+/** @typedef {import('./types.js').Anchor} Anchor */
+/** @typedef {import('./types.js').Segment} Segment */
+/** @typedef {import('./types.js').AxisPos} AxisPos */
+/** @typedef {import('./types.js').AxisSize} AxisSize */
+/** @typedef {import('./types.js').MapData} MapData */
+/** @typedef {import('./types.js').ScrollPane} ScrollPane */
+/** @typedef {import('./types.js').WheelBrakeOptions} WheelBrakeOptions */
+/** @typedef {import('./types.js').WheelOptions} WheelOptions */
+/** @typedef {import('./types.js').SyncOptions} SyncOptions */
+
 // ─── Pump threshold ───
 
 /** Remaining wheel delta below this value (px) ends the pump loop. */
@@ -21,15 +31,20 @@ const PUMP_STOP_PX = 5;
 /** Threshold (px) for absorbing programmatic scroll echoes. */
 const ECHO_GUARD_PX = 2;
 
+// ─── Axis helpers ───
+
+/** @type {Readonly<Record<AxisPos, AxisSize>>} */
+const SIZE_KEY = { aPx: "aS", bPx: "bS", vPx: "vS" };
+
 // ─── Core ───
 
 /**
  * Build a virtual-axis scroll map from anchors.
  *
- * @param {import('./index.d.ts').Anchor[]} anchors
+ * @param {Anchor[]} anchors
  * @param {number} sMaxA - scrollHeight − clientHeight of pane A.
  * @param {number} sMaxB - scrollHeight − clientHeight of pane B.
- * @returns {import('./index.d.ts').MapData}
+ * @returns {MapData}
  */
 export function buildMap(anchors, sMaxA, sMaxB) {
   const sorted = anchors
@@ -40,6 +55,7 @@ export function buildMap(anchors, sMaxA, sMaxB) {
     }))
     .sort((x, y) => x.aPx - y.aPx);
 
+  /** @type {Anchor[]} */
   const pts = [{ aPx: 0, bPx: 0 }];
   let lastB = 0;
   let droppedCount = 0;
@@ -61,6 +77,7 @@ export function buildMap(anchors, sMaxA, sMaxB) {
     const aS = pts[i + 1].aPx - pts[i].aPx;
     const bS = pts[i + 1].bPx - pts[i].bPx;
     const vS = Math.max(aS, bS);
+    /** @type {Segment} */
     const seg = { aPx: pts[i].aPx, bPx: pts[i].bPx, vPx: vCum, aS, bS, vS };
     if (pts[i].snap) { seg.snap = true; hasSnap = true; }
     map.push(seg);
@@ -79,9 +96,9 @@ export function buildMap(anchors, sMaxA, sMaxB) {
  * Look up a position on one axis given a position on another.
  * Binary search + linear interpolation within the segment.
  *
- * @param {import('./index.d.ts').Segment[]} segments
- * @param {"aPx"|"bPx"|"vPx"} from - Source axis.
- * @param {"aPx"|"bPx"|"vPx"} to   - Target axis.
+ * @param {Segment[]} segments
+ * @param {AxisPos} from - Source axis.
+ * @param {AxisPos} to   - Target axis.
  * @param {number} value  - Position on source axis (px). Caller must clamp
  *   to valid range; out-of-range values are extrapolated, not clamped.
  * @returns {number} Position on target axis (px).
@@ -89,8 +106,8 @@ export function buildMap(anchors, sMaxA, sMaxB) {
 export function lookup(segments, from, to, value) {
   if (segments.length === 0) return 0;
 
-  const fromS = from.charAt(0) + "S";
-  const toS = to.charAt(0) + "S";
+  const fromS = SIZE_KEY[from];
+  const toS = SIZE_KEY[to];
 
   let lo = 0,
     hi = segments.length - 1;
@@ -119,9 +136,9 @@ export function lookup(segments, from, to, value) {
  */
 export class DualScrollSync {
   /**
-   * @param {import('./index.d.ts').ScrollPane} paneA
-   * @param {import('./index.d.ts').ScrollPane} paneB
-   * @param {import('./index.d.ts').SyncOptions} opts
+   * @param {ScrollPane} paneA
+   * @param {ScrollPane} paneB
+   * @param {SyncOptions} opts
    */
   constructor(paneA, paneB, opts) {
     this.paneA = paneA;
@@ -132,36 +149,50 @@ export class DualScrollSync {
     this.alignOffset = opts.alignOffset ?? 0;
     this.enabled = true;
 
-    const w = opts.wheel ?? {};
+    const wh = opts.wheel;
+    const brake = wh?.brake;
     this.wheel = {
-      smooth: w.smooth ?? 0.1,
-      snap: w.snap ?? 0,
-      brake: w.brake ? { factor: w.brake.factor, zone: w.brake.zone } : null,
+      smooth: wh?.smooth ?? 0.1,
+      snap: wh?.snap ?? 0,
+      brake: brake ? { factor: brake.factor, zone: brake.zone } : null,
     };
 
-    const g = typeof globalThis !== "undefined" ? globalThis : {};
-    const raf = g.requestAnimationFrame;
-    const caf = g.cancelAnimationFrame;
+    const raf = globalThis.requestAnimationFrame;
+    const caf = globalThis.cancelAnimationFrame;
+    /** @internal */
     this._requestFrame =
-      opts.requestFrame || (raf ? raf.bind(g) : (fn) => setTimeout(fn, 16));
-    this._cancelFrame = opts.cancelFrame || (caf ? caf.bind(g) : clearTimeout);
+      opts.requestFrame || (raf ? raf.bind(globalThis) : (/** @type {() => void} */ fn) => setTimeout(fn, 16));
+    /** @internal */
+    this._cancelFrame = opts.cancelFrame || (caf ? caf.bind(globalThis) : clearTimeout);
 
+    /** @internal @type {MapData | null} */
     this._data = null;
+    /** @internal */
     this._dirty = true;
+    /** @internal */
     this._vCurrent = 0;
+    /** @internal @type {number | null} */
     this._expectedA = null;
+    /** @internal @type {number | null} */
     this._expectedB = null;
+    /** @internal */
     this._wheelRemaining = 0;
+    /** @internal @type {number | null} */
     this._pumpRafId = null;
+    /** @internal */
     this._snapping = false;
+    /** @internal */
     this._applying = false;
 
+    /** @internal */
     this._onScrollA = () => {
       this._handleScroll("a");
     };
+    /** @internal */
     this._onScrollB = () => {
       this._handleScroll("b");
     };
+    /** @internal @type {(e: WheelEvent) => void} */
     this._onWheel = (e) => {
       this._onWheelEvent(e);
     };
@@ -179,7 +210,7 @@ export class DualScrollSync {
 
   /**
    * Ensure the scroll map is current.
-   * @returns {import('./index.d.ts').MapData}
+   * @returns {MapData}
    */
   ensureMap() {
     if (this._dirty || !this._data) {
@@ -211,10 +242,13 @@ export class DualScrollSync {
     this.paneB.removeEventListener("wheel", this._onWheel);
   }
 
-  /** @private Set both panes from _vCurrent. */
+  /**
+   * @internal
+   * Set both panes from _vCurrent.
+   */
   _applyV() {
     this._applying = true;
-    const segs = this._data.segments;
+    const segs = this.ensureMap().segments;
     const off = this.alignOffset;
     this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent) - off;
     this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent) - off;
@@ -224,7 +258,11 @@ export class DualScrollSync {
     if (this.onSync) this.onSync();
   }
 
-  /** @private Handle native scroll event; absorb echoes and sync the opposite pane. */
+  /**
+   * @internal
+   * Handle native scroll event; absorb echoes and sync the opposite pane.
+   * @param {"a" | "b"} source
+   */
   _handleScroll(source) {
     if (!this.enabled || this._applying) return;
 
@@ -259,7 +297,11 @@ export class DualScrollSync {
     if (this.onSync) this.onSync();
   }
 
-  /** @private Validate wheel event, preventDefault, and dispatch delta. */
+  /**
+   * @internal
+   * Validate wheel event, preventDefault, and dispatch delta.
+   * @param {WheelEvent} e
+   */
   _onWheelEvent(e) {
     if (!this.enabled || e.shiftKey || e.ctrlKey || e.metaKey) return;
     if (e.deltaX !== 0 && e.deltaY === 0) return;
@@ -277,7 +319,10 @@ export class DualScrollSync {
     if (this._pumpRafId === null) this._pumpWheel();
   }
 
-  /** @private Compute anchor-proximity damping factor. */
+  /**
+   * @internal
+   * Compute anchor-proximity damping factor.
+   */
   _anchorDamping() {
     if (this._snapping) return 1;
     const brake = this.wheel.brake;
@@ -293,7 +338,10 @@ export class DualScrollSync {
     return brake.factor + (1 - brake.factor) * s;
   }
 
-  /** @private Drain _wheelRemaining across rAF frames. */
+  /**
+   * @internal
+   * Drain _wheelRemaining across rAF frames.
+   */
   _pumpWheel() {
     this._pumpRafId = this._requestFrame(() => {
       if (!this.enabled) {
@@ -312,13 +360,16 @@ export class DualScrollSync {
     });
   }
 
-  /** @private Snap to nearest anchor if within range; reuses pump with damping bypass. */
+  /**
+   * @internal
+   * Snap to nearest anchor if within range; reuses pump with damping bypass.
+   */
   _trySnap() {
     if (this._snapping) { this._snapping = false; return; }
     const { snap } = this.wheel;
     if (!snap || !this._data) return;
     const { segments, hasSnap } = this._data;
-    let nearest, minDist = Infinity;
+    let nearest = 0, minDist = Infinity;
     for (let i = 0; i < segments.length; i++) {
       if (hasSnap && !segments[i].snap) continue;
       const d = Math.abs(this._vCurrent - segments[i].vPx);
@@ -331,7 +382,11 @@ export class DualScrollSync {
     }
   }
 
-  /** @private Apply delta to vCurrent, sync panes. */
+  /**
+   * @internal
+   * Apply delta to vCurrent, sync panes.
+   * @param {number} delta
+   */
   _handleWheel(delta) {
     const d = this.ensureMap();
     this._vCurrent = Math.max(0, Math.min(d.vTotal, this._vCurrent + delta));

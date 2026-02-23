@@ -14,14 +14,18 @@
   "files": [
     "src/index.js",
     "src/index.d.ts",
+    "src/types.d.ts",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "test": "node --test test/index.test.js",
-    "typecheck": "tsc --noEmit --strict --moduleResolution node --module esnext --target esnext --lib esnext,dom test/types.check.ts",
+    "typecheck": "tsc",
+    "generate:types": "node scripts/generate-types.js",
+    "check:types-fresh": "node scripts/generate-types.js && git diff --exit-code src/index.d.ts",
     "lint": "eslint src/ test/",
-    "build:demo": "node scripts/build-demo.js"
+    "typecheck:test": "tsc --noEmit --strict --module esnext --moduleResolution node --target esnext --lib esnext,dom test/types.check.ts",
+    "start": "npx serve ."
   },
   "keywords": [
     "scroll",
@@ -42,6 +46,7 @@
     "url": "https://github.com/uminekokenimu/dual-scroll-sync/issues"
   },
   "devDependencies": {
-    "eslint": "^10.0.1"
+    "eslint": "^10.0.1",
+    "typescript": "^5.9.3"
   }
 }

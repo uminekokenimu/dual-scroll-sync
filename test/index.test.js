@@ -632,10 +632,9 @@ describe('anchor braking', () => {
     s.ensureMap();
     // Place vCurrent at half the zone distance from anchor at v=0
     s._vCurrent = 50;
-    const f = s._anchorDamping();
-    // Linear would give 0.5 + 0.5*0.5 = 0.75
-    // Smoothstep: t=0.5, s=0.5²*(3-1)=0.5, factor=0.5+0.5*0.5=0.75
-    // Actually smoothstep(0.5) = 0.5, so midpoint IS 0.75.
+    const fMid = s._anchorDamping();
+    // smoothstep(0.5) = 0.5, factor = 0.5 + 0.5*0.5 = 0.75 (same as linear at midpoint)
+    near(fMid, 0.75, 0.01);
     // But at t=0.25: smoothstep=0.15625, factor=0.578 (linear would be 0.625)
     s._vCurrent = 25; // t=0.25
     const f2 = s._anchorDamping();
@@ -675,5 +674,165 @@ describe('anchor braking', () => {
       sNoBrake.destroy();
       done();
     }, 60);
+  });
+});
+
+// ─── alignOffset ───
+
+describe('alignOffset', () => {
+  let a, b;
+  beforeEach(() => {
+    a = mockPane(2000);
+    b = mockPane(3000);
+  });
+
+  test('alignOffset shifts scroll positions by offset', () => {
+    const s = makeSync(a, b, { alignOffset: 30 });
+    s.ensureMap();
+    a._fire('wheel', wheelEvent(200));
+    const v = s._vCurrent;
+    const segs = s.ensureMap().segments;
+    // Pane positions should be lookup(v) - offset
+    near(a.scrollTop, lookup(segs, 'vPx', 'aPx', v) - 30, 1);
+    near(b.scrollTop, lookup(segs, 'vPx', 'bPx', v) - 30, 1);
+    s.destroy();
+  });
+
+  test('alignOffset=0 is equivalent to no offset', () => {
+    const s1 = makeSync(a, b, { alignOffset: 0 });
+    const a2 = mockPane(2000);
+    const b2 = mockPane(3000);
+    const s2 = makeSync(a2, b2);
+    s1.ensureMap();
+    s2.ensureMap();
+    a._fire('wheel', wheelEvent(300));
+    a2._fire('wheel', wheelEvent(300));
+    near(a.scrollTop, a2.scrollTop, 1);
+    near(b.scrollTop, b2.scrollTop, 1);
+    s1.destroy();
+    s2.destroy();
+  });
+
+  test('scroll event with alignOffset re-derives vCurrent correctly', () => {
+    const s = makeSync(a, b, { alignOffset: 20 });
+    s.ensureMap();
+    // Simulate scrollbar drag on pane A
+    a.scrollTop = 200;
+    a._fire('scroll');
+    // vCurrent should account for offset: lookup(aPx, vPx, scrollTop + offset)
+    const segs = s.ensureMap().segments;
+    const expectedV = lookup(segs, 'aPx', 'vPx', 200 + 20);
+    near(s._vCurrent, expectedV, 1);
+    s.destroy();
+  });
+});
+
+// ─── snap (wheel-level) ───
+
+describe('wheel snap', () => {
+  let a, b;
+  beforeEach(() => {
+    a = mockPane(2000);
+    b = mockPane(3000);
+  });
+
+  test('hasSnap is true when any anchor has snap: true', () => {
+    const { hasSnap } = buildMap([
+      { aPx: 200, bPx: 600, snap: true },
+      { aPx: 500, bPx: 800 },
+    ], 1000, 1000);
+    assert.equal(hasSnap, true);
+  });
+
+  test('hasSnap is false when no anchor has snap', () => {
+    const { hasSnap } = buildMap([
+      { aPx: 200, bPx: 600 },
+      { aPx: 500, bPx: 800 },
+    ], 1000, 1000);
+    assert.equal(hasSnap, false);
+  });
+
+  test('snap segment preserves snap: true on segment', () => {
+    const { segments } = buildMap([
+      { aPx: 200, bPx: 600, snap: true },
+    ], 1000, 1000);
+    assert.equal(segments[1].snap, true);
+    assert.equal(segments[0].snap, undefined);
+  });
+
+  test('_trySnap triggers snap when within range', (t, done) => {
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 200, bPx: 600, snap: true }],
+      wheel: { smooth: 0.5, snap: 50 },
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    s.ensureMap();
+    const anchorV = s.ensureMap().segments[1].vPx;
+    // Place vCurrent 30px before anchor (within snap range of 50)
+    s._vCurrent = anchorV - 30;
+    s._applyV();
+    s._trySnap();
+    // After snap animation completes, should be at anchor
+    setTimeout(() => {
+      near(s._vCurrent, anchorV, 5);
+      s.destroy();
+      done();
+    }, 200);
+  });
+
+  test('_trySnap does nothing when out of range', () => {
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 500, bPx: 800, snap: true }],
+      wheel: { smooth: 0.5, snap: 10 },
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    s.ensureMap();
+    // Place vCurrent far from any anchor
+    const anchorV = s.ensureMap().segments[1].vPx;
+    s._vCurrent = anchorV - 100;
+    s._applyV();
+    const vBefore = s._vCurrent;
+    s._trySnap();
+    // Should not have started snap (no pump scheduled)
+    assert.equal(s._vCurrent, vBefore);
+    s.destroy();
+  });
+
+  test('snap=0 disables snap entirely', () => {
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [{ aPx: 200, bPx: 600, snap: true }],
+      wheel: { smooth: 0.5, snap: 0 },
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    s.ensureMap();
+    const anchorV = s.ensureMap().segments[1].vPx;
+    s._vCurrent = anchorV - 5;
+    s._applyV();
+    const vBefore = s._vCurrent;
+    s._trySnap();
+    assert.equal(s._vCurrent, vBefore);
+    s.destroy();
+  });
+
+  test('with hasSnap, only snap anchors are snap targets', () => {
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => [
+        { aPx: 200, bPx: 400 },           // no snap
+        { aPx: 500, bPx: 800, snap: true }, // snap target
+      ],
+      wheel: { smooth: 0.5, snap: 50 },
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    const d = s.ensureMap();
+    // seg[1] is at the non-snap anchor, seg[2] is at the snap anchor
+    const nonSnapV = d.segments[1].vPx;
+    // Place near the non-snap anchor (not near snap anchor at segments[2])
+    s._vCurrent = nonSnapV - 5;
+    s._applyV();
+    const vBefore = s._vCurrent;
+    s._trySnap();
+    // Should NOT snap to non-snap anchor
+    assert.equal(s._vCurrent, vBefore);
+    s.destroy();
   });
 });
