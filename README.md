@@ -10,6 +10,17 @@ Each segment's virtual length is `vS = max(aS, bS)` — the pane with more conte
 npm install dual-scroll-sync
 ```
 
+## Demo
+
+`examples/demo.html` is a markdown editor + preview demo with interactive scroll sync. Build first, then serve:
+
+```
+npm run build
+npm start
+```
+
+Open the Settings panel to adjust `alignOffset`, `wheel.smooth`, `snap`, and `brake` in real time.
+
 ## Usage
 
 ```js

@@ -25,7 +25,8 @@
     "check:types-fresh": "node scripts/generate-types.js && git diff --exit-code src/index.d.ts",
     "lint": "eslint src/ test/",
     "typecheck:test": "tsc --noEmit --strict --module esnext --moduleResolution node --target esnext --lib esnext,dom test/types.check.ts",
-    "start": "npx serve ."
+    "build": "esbuild src/index.js --bundle --format=iife --global-name=DualScrollSync --outfile=dist/dual-scroll-sync.iife.js",
+    "start": "npm run build && npx serve ."
   },
   "keywords": [
     "scroll",
@@ -46,6 +47,7 @@
     "url": "https://github.com/uminekokenimu/dual-scroll-sync/issues"
   },
   "devDependencies": {
+    "esbuild": "^0.27.3",
     "eslint": "^10.0.1",
     "typescript": "^5.9.3"
   }
