@@ -116,6 +116,7 @@ export function lookup(segments, from, to, value) {
  * @example
  * const sync = new DualScrollSync(editor, preview, {
  *   getAnchors: () => headingAnchors(),
+ *   wheel: { smooth: 0.08, brake: { factor: 0.2, zone: 100 } },
  * });
  */
 export class DualScrollSync {
@@ -130,16 +131,20 @@ export class DualScrollSync {
     this.getAnchors = opts.getAnchors;
     this.onSync = opts.onSync || null;
     this.onMapBuilt = opts.onMapBuilt || null;
-    this.wheelSmooth = opts.wheelSmooth ?? 0.05;
     this.enabled = true;
+
+    const w = opts.wheel ?? {};
+    this.wheel = {
+      smooth: w.smooth ?? 0.05,
+      brake: w.brake ? { factor: w.brake.factor, zone: w.brake.zone } : null,
+    };
 
     const g = typeof globalThis !== "undefined" ? globalThis : {};
     const raf = g.requestAnimationFrame;
     const caf = g.cancelAnimationFrame;
     this._requestFrame =
       opts.requestFrame || (raf ? raf.bind(g) : (fn) => setTimeout(fn, 16));
-    this._cancelFrame =
-      opts.cancelFrame || (caf ? caf.bind(g) : clearTimeout);
+    this._cancelFrame = opts.cancelFrame || (caf ? caf.bind(g) : clearTimeout);
 
     this._data = null;
     this._dirty = true;
@@ -150,9 +155,15 @@ export class DualScrollSync {
     this._pumpRafId = null;
     this._applying = false;
 
-    this._onScrollA = () => { this._handleScroll("a"); };
-    this._onScrollB = () => { this._handleScroll("b"); };
-    this._onWheel = (e) => { this._onWheelEvent(e); };
+    this._onScrollA = () => {
+      this._handleScroll("a");
+    };
+    this._onScrollB = () => {
+      this._handleScroll("b");
+    };
+    this._onWheel = (e) => {
+      this._onWheelEvent(e);
+    };
 
     paneA.addEventListener("scroll", this._onScrollA);
     paneB.addEventListener("scroll", this._onScrollB);
@@ -248,12 +259,12 @@ export class DualScrollSync {
   _onWheelEvent(e) {
     if (!this.enabled || e.shiftKey || e.ctrlKey || e.metaKey) return;
     if (e.deltaX !== 0 && e.deltaY === 0) return;
-    if (this.wheelSmooth <= 0) return;
+    if (this.wheel.smooth <= 0) return;
     e.preventDefault();
     let dy = e.deltaY;
     if (e.deltaMode === 1) dy *= 16;
     else if (e.deltaMode === 2) dy *= this.paneA.clientHeight;
-    if (this.wheelSmooth >= 1) {
+    if (this.wheel.smooth >= 1) {
       this._handleWheel(dy);
       return;
     }
@@ -261,11 +272,30 @@ export class DualScrollSync {
     if (this._pumpRafId === null) this._pumpWheel();
   }
 
+  /** @private Compute anchor-proximity damping factor. */
+  _anchorDamping() {
+    const brake = this.wheel.brake;
+    if (!brake || brake.factor >= 1 || brake.zone <= 0) return 1;
+    const { segments } = this.ensureMap();
+    const v = this._vCurrent;
+    let minDist = Infinity;
+    for (let i = 0; i < segments.length; i++) {
+      minDist = Math.min(minDist, Math.abs(v - segments[i].vPx));
+    }
+    const t = Math.min(minDist / brake.zone, 1);
+    const s = t * t * (3 - 2 * t);
+    return brake.factor + (1 - brake.factor) * s;
+  }
+
   /** @private Drain _wheelRemaining across rAF frames. */
   _pumpWheel() {
     this._pumpRafId = this._requestFrame(() => {
-      if (!this.enabled) { this._pumpRafId = null; return; }
-      const delta = this._wheelRemaining * this.wheelSmooth;
+      if (!this.enabled) {
+        this._pumpRafId = null;
+        return;
+      }
+      const delta =
+        this._wheelRemaining * this.wheel.smooth * this._anchorDamping();
       this._wheelRemaining -= delta;
       this._handleWheel(delta);
       if (Math.abs(this._wheelRemaining) >= PUMP_STOP_PX) this._pumpWheel();

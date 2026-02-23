@@ -56,6 +56,22 @@ export interface ScrollPane {
   removeEventListener(type: string, handler: (e: any) => void): void;
 }
 
+/** Anchor-proximity braking options. */
+export interface WheelBrakeOptions {
+  /** Minimum drain-rate multiplier at an anchor (0–1). */
+  factor: number;
+  /** Radius (virtual px) around each anchor where braking applies. */
+  zone: number;
+}
+
+/** Wheel behavior options. */
+export interface WheelOptions {
+  /** Interpolation factor (0–1). 0 = OFF, 1 = instant, (0,1) = interpolated. @default 0.05 */
+  smooth: number;
+  /** Anchor proximity braking. Omit to disable. */
+  brake?: WheelBrakeOptions;
+}
+
 /** Options for {@link DualScrollSync}. */
 export interface SyncOptions {
   /** Returns the current anchor points. Called on map rebuild. */
@@ -64,12 +80,12 @@ export interface SyncOptions {
   onSync?: () => void;
   /** Called when the scroll map is rebuilt. */
   onMapBuilt?: (data: MapData) => void;
-  /** Interpolation factor for wheel input (0–1). Each frame drains this fraction of remaining delta. 1 = instant. @default 0.05 */
-  wheelSmooth?: number;
   /** Frame scheduler. Default: requestAnimationFrame (with setTimeout fallback). */
   requestFrame?: (callback: () => void) => number;
   /** Cancel a scheduled frame. Default: cancelAnimationFrame (with clearTimeout fallback). */
   cancelFrame?: (id: number) => void;
+  /** Wheel behavior. Omit for defaults (smooth: 0.05, no brake). */
+  wheel?: WheelOptions;
 }
 
 /**
@@ -116,8 +132,8 @@ export class DualScrollSync {
   onSync: (() => void) | null;
   /** Callback on map rebuild. */
   onMapBuilt: ((data: MapData) => void) | null;
-  /** Wheel interpolation factor (0–1). */
-  wheelSmooth: number;
+  /** Wheel behavior settings. */
+  wheel: { smooth: number; brake: WheelBrakeOptions | null };
   /** When false, all sync is suspended. */
   enabled: boolean;
 

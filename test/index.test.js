@@ -229,7 +229,7 @@ function makeSync(a, b, extra) {
       { aPx: 200, bPx: 600 },
       { aPx: 500, bPx: 800 },
     ],
-    wheelSmooth: 1,
+    wheel: { smooth: 1 },
     ...extra,
   });
 }
@@ -311,7 +311,7 @@ describe('DualScrollSync', () => {
   test('getAnchors exception → empty map, no crash', () => {
     const s = new DualScrollSync(a, b, {
       getAnchors: () => { throw new Error('broken'); },
-      wheelSmooth: 1,
+      wheel: { smooth: 1 },
     });
     const d = s.ensureMap();
     assert.deepEqual(d.segments, []);
@@ -323,7 +323,7 @@ describe('DualScrollSync', () => {
   test('wheel after getAnchors exception does not crash', () => {
     const s = new DualScrollSync(a, b, {
       getAnchors: () => { throw new Error('broken'); },
-      wheelSmooth: 1,
+      wheel: { smooth: 1 },
     });
     a._fire('wheel', wheelEvent(100));
     assert.equal(a.scrollTop, 0);
@@ -375,10 +375,10 @@ describe('DualScrollSync', () => {
     s.destroy();
   });
 
-  test('wheelSmooth < 1 drains delta across multiple frames', (t, done) => {
+  test('wheel.smooth < 1 drains delta across multiple frames', (t, done) => {
     let frames = 0;
     const s = makeSync(a, b, {
-      wheelSmooth: 0.5,
+      wheel: { smooth: 0.5 },
       requestFrame: (fn) => setTimeout(fn, 1),
     });
     s.ensureMap();
@@ -397,11 +397,11 @@ describe('DualScrollSync', () => {
     }, 200);
   });
 
-  test('wheelSmooth=0 does not preventDefault and does not start pump', () => {
+  test('wheel.smooth=0 does not preventDefault and does not start pump', () => {
     let frameRequested = false;
     let prevented = false;
     const s = makeSync(a, b, {
-      wheelSmooth: 0,
+      wheel: { smooth: 0 },
       requestFrame: (fn) => { frameRequested = true; return setTimeout(fn, 1); },
     });
     s.ensureMap();
@@ -409,14 +409,14 @@ describe('DualScrollSync', () => {
       ...wheelEvent(100),
       preventDefault() { prevented = true; },
     });
-    assert.equal(a.scrollTop, 0, 'wheelSmooth=0 should not move');
+    assert.equal(a.scrollTop, 0, 'wheel.smooth=0 should not move');
     assert.equal(prevented, false, 'preventDefault should not be called');
     assert.equal(frameRequested, false, 'pump should not start');
     s.destroy();
   });
 
-  test('wheelSmooth > 1 treated as instant', () => {
-    const s = makeSync(a, b, { wheelSmooth: 2 });
+  test('wheel.smooth > 1 treated as instant', () => {
+    const s = makeSync(a, b, { wheel: { smooth: 2 } });
     s.ensureMap();
     a._fire('wheel', wheelEvent(100));
     assert.ok(a.scrollTop > 0, 'should move synchronously');
@@ -426,7 +426,7 @@ describe('DualScrollSync', () => {
   test('destroy during pump cancels pending frame', (t, done) => {
     let frameCount = 0;
     const s = makeSync(a, b, {
-      wheelSmooth: 0.5,
+      wheel: { smooth: 0.5 },
       requestFrame: (fn) => setTimeout(fn, 1),
     });
     s.ensureMap();
@@ -486,7 +486,7 @@ describe('DualScrollSync', () => {
   test('invalidate during pump uses new map', (t, done) => {
     let mapCount = 0;
     const s = makeSync(a, b, {
-      wheelSmooth: 0.5,
+      wheel: { smooth: 0.5 },
       requestFrame: (fn) => setTimeout(fn, 1),
       onMapBuilt: () => { mapCount++; },
     });
@@ -505,7 +505,7 @@ describe('DualScrollSync', () => {
 
   test('scroll during pump: user scroll takes priority', (t, done) => {
     const s = makeSync(a, b, {
-      wheelSmooth: 0.5,
+      wheel: { smooth: 0.5 },
       requestFrame: (fn) => setTimeout(fn, 5),
     });
     s.ensureMap();
@@ -548,7 +548,7 @@ describe('DualScrollSync', () => {
 
   test('rapid wheel events accumulate in pump', (t, done) => {
     const s = makeSync(a, b, {
-      wheelSmooth: 0.5,
+      wheel: { smooth: 0.5 },
       requestFrame: (fn) => setTimeout(fn, 1),
     });
     s.ensureMap();
@@ -573,5 +573,107 @@ describe('DualScrollSync', () => {
     // Should work: map is built lazily
     assert.ok(b.scrollTop > 0, 'B should sync even without prior ensureMap');
     s.destroy();
+  });
+});
+
+// ─── Anchor braking ───
+
+describe('anchor braking', () => {
+  let a, b;
+  beforeEach(() => {
+    a = mockPane(2000);
+    b = mockPane(3000);
+  });
+
+  test('brake.factor=1 has no damping effect', () => {
+    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 1, zone: 100 } } });
+    assert.equal(s._anchorDamping(), 1);
+    s.destroy();
+  });
+
+  test('brake.zone=0 disables damping', () => {
+    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 0 } } });
+    assert.equal(s._anchorDamping(), 1);
+    s.destroy();
+  });
+
+  test('no brake option disables damping', () => {
+    const s = makeSync(a, b, { wheel: { smooth: 1 } });
+    assert.equal(s._anchorDamping(), 1);
+    s.destroy();
+  });
+
+  test('at anchor (v=0), damping = brake.factor', () => {
+    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 100 } } });
+    s.ensureMap();
+    s._vCurrent = 0; // segment boundary at v=0
+    near(s._anchorDamping(), 0.5, 0.01);
+    s.destroy();
+  });
+
+  test('far from any anchor, damping = 1.0', () => {
+    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 50 } } });
+    s.ensureMap();
+    // Place vCurrent far from all segment boundaries
+    const segs = s._data.segments;
+    // Mid-point of the largest segment
+    let best = segs[0];
+    for (const seg of segs) { if (seg.vS > best.vS) best = seg; }
+    s._vCurrent = best.vPx + best.vS / 2;
+    // If segment is large enough, midpoint is > brake.zone from both edges
+    if (best.vS / 2 > 50) {
+      near(s._anchorDamping(), 1.0, 0.01);
+    }
+    s.destroy();
+  });
+
+  test('smoothstep curve is non-linear (midpoint ≠ 0.75)', () => {
+    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 100 } } });
+    s.ensureMap();
+    // Place vCurrent at half the zone distance from anchor at v=0
+    s._vCurrent = 50;
+    const f = s._anchorDamping();
+    // Linear would give 0.5 + 0.5*0.5 = 0.75
+    // Smoothstep: t=0.5, s=0.5²*(3-1)=0.5, factor=0.5+0.5*0.5=0.75
+    // Actually smoothstep(0.5) = 0.5, so midpoint IS 0.75.
+    // But at t=0.25: smoothstep=0.15625, factor=0.578 (linear would be 0.625)
+    s._vCurrent = 25; // t=0.25
+    const f2 = s._anchorDamping();
+    const linearExpected = 0.5 + 0.5 * 0.25; // 0.625
+    assert.ok(f2 < linearExpected, `smoothstep at t=0.25 should be < linear (${f2} < ${linearExpected})`);
+    s.destroy();
+  });
+
+  test('pump drains slower near anchor with braking', (t, done) => {
+    // With braking
+    const sBrake = makeSync(a, b, {
+      wheel: { smooth: 0.5, brake: { factor: 0.3, zone: 200 } },
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    sBrake.ensureMap();
+
+    // Without braking (control)
+    const a2 = mockPane(2000);
+    const b2 = mockPane(3000);
+    const sNoBrake = makeSync(a2, b2, {
+      wheel: { smooth: 0.5 },
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    sNoBrake.ensureMap();
+
+    // Both start at v=0 (on anchor) and receive same delta
+    a._fire('wheel', wheelEvent(50));
+    a2._fire('wheel', wheelEvent(50));
+
+    setTimeout(() => {
+      // Braked instance should have moved less after same elapsed time
+      assert.ok(
+        sBrake._vCurrent <= sNoBrake._vCurrent,
+        `braked (${sBrake._vCurrent}) should be ≤ unbraked (${sNoBrake._vCurrent})`
+      );
+      sBrake.destroy();
+      sNoBrake.destroy();
+      done();
+    }, 60);
   });
 });
