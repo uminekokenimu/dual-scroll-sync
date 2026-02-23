@@ -129,6 +129,7 @@ export class DualScrollSync {
     this.getAnchors = opts.getAnchors;
     this.onSync = opts.onSync || null;
     this.onMapBuilt = opts.onMapBuilt || null;
+    this.alignOffset = opts.alignOffset ?? 0;
     this.enabled = true;
 
     const w = opts.wheel ?? {};
@@ -214,8 +215,9 @@ export class DualScrollSync {
   _applyV() {
     this._applying = true;
     const segs = this._data.segments;
-    this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
-    this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
+    const off = this.alignOffset;
+    this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent) - off;
+    this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent) - off;
     this._expectedA = this.paneA.scrollTop;
     this._expectedB = this.paneB.scrollTop;
     this._applying = false;
@@ -244,13 +246,14 @@ export class DualScrollSync {
     const segs = this.ensureMap().segments;
     if (segs.length === 0) return;
 
+    const off = this.alignOffset;
     if (source === "a") {
-      this._vCurrent = lookup(segs, "aPx", "vPx", this.paneA.scrollTop);
-      this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent);
+      this._vCurrent = lookup(segs, "aPx", "vPx", this.paneA.scrollTop + off);
+      this.paneB.scrollTop = lookup(segs, "vPx", "bPx", this._vCurrent) - off;
       this._expectedB = this.paneB.scrollTop;
     } else {
-      this._vCurrent = lookup(segs, "bPx", "vPx", this.paneB.scrollTop);
-      this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent);
+      this._vCurrent = lookup(segs, "bPx", "vPx", this.paneB.scrollTop + off);
+      this.paneA.scrollTop = lookup(segs, "vPx", "aPx", this._vCurrent) - off;
       this._expectedA = this.paneA.scrollTop;
     }
     if (this.onSync) this.onSync();

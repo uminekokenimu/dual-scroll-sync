@@ -91,6 +91,9 @@ export interface SyncOptions {
   onSync?: () => void;
   /** Called when the scroll map is rebuilt. */
   onMapBuilt?: (data: MapData) => void;
+  /** Viewport offset (px) for anchor alignment. Anchors align this many
+   *  pixels below the top of each pane. @default 0 */
+  alignOffset?: number;
   /** Frame scheduler. Default: requestAnimationFrame (with setTimeout fallback). */
   requestFrame?: (callback: () => void) => number;
   /** Cancel a scheduled frame. Default: cancelAnimationFrame (with clearTimeout fallback). */
@@ -143,6 +146,8 @@ export class DualScrollSync {
   onSync: (() => void) | null;
   /** Callback on map rebuild. */
   onMapBuilt: ((data: MapData) => void) | null;
+  /** Viewport offset for anchor alignment (px). */
+  alignOffset: number;
   /** Wheel behavior settings. */
   wheel: { smooth: number; snap: number; brake: WheelBrakeOptions | null };
   /** When false, all sync is suspended. */
