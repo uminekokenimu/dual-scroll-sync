@@ -10,6 +10,18 @@ function near(actual, expected, tol) {
   );
 }
 
+/** Synchronous frame scheduler for deterministic pump tests. */
+function syncScheduler() {
+  const queue = [];
+  let nextId = 1;
+  return {
+    requestFrame(fn) { const id = nextId++; queue.push({ id, fn }); return id; },
+    cancelFrame(id) { const i = queue.findIndex(f => f.id === id); if (i >= 0) queue.splice(i, 1); },
+    drain(max = 200) { let n = 0; while (queue.length && n < max) { queue.shift().fn(); n++; } return n; },
+    get pending() { return queue.length; },
+  };
+}
+
 // ─── buildMap ───
 
 describe('buildMap', () => {
@@ -234,6 +246,33 @@ function makeSync(a, b, extra) {
   });
 }
 
+/** Derive vCurrent from public API (scrollTop + lookup). */
+function deriveV(s) {
+  const d = s.ensureMap();
+  return lookup(d.segments, 'aPx', 'vPx', s.paneA.scrollTop + s.alignOffset);
+}
+
+/**
+ * Pump one frame and return the virtual-axis delta from startV.
+ * smooth = 0.5; 1-frame drain = delta × smooth × damping(startV).
+ */
+function pumpOneDelta(startV, delta, brakeOpts) {
+  const pa = mockPane(2000), pb = mockPane(3000);
+  const sched = syncScheduler();
+  const s = makeSync(pa, pb, {
+    wheel: { smooth: 0.5, ...brakeOpts },
+    requestFrame: sched.requestFrame,
+    cancelFrame: sched.cancelFrame,
+  });
+  s.ensureMap();
+  s.scrollTo(startV);
+  pa._fire('wheel', wheelEvent(delta));
+  sched.drain(1);
+  const vAfter = deriveV(s);
+  s.destroy();
+  return vAfter - startV;
+}
+
 describe('DualScrollSync', () => {
   let a, b;
   beforeEach(() => {
@@ -375,26 +414,23 @@ describe('DualScrollSync', () => {
     s.destroy();
   });
 
-  test('wheel.smooth < 1 drains delta across multiple frames', (t, done) => {
+  test('wheel.smooth < 1 drains delta across multiple frames', () => {
+    const sched = syncScheduler();
     let frames = 0;
     const s = makeSync(a, b, {
       wheel: { smooth: 0.5 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     s.ensureMap();
     s.onSync = () => { frames++; };
     a._fire('wheel', wheelEvent(100));
-
-    // Delta should NOT be applied synchronously
     assert.equal(a.scrollTop, 0, 'not applied synchronously');
-
-    setTimeout(() => {
-      assert.ok(frames >= 2, `expected multiple frames, got ${frames}`);
-      assert.ok(a.scrollTop > 0, 'pane A moved after drain');
-      assert.ok(b.scrollTop > 0, 'pane B moved after drain');
-      s.destroy();
-      done();
-    }, 200);
+    sched.drain();
+    assert.ok(frames >= 2, `expected multiple frames, got ${frames}`);
+    assert.ok(a.scrollTop > 0, 'pane A moved after drain');
+    assert.ok(b.scrollTop > 0, 'pane B moved after drain');
+    s.destroy();
   });
 
   test('wheel.smooth=0 does not preventDefault and does not start pump', () => {
@@ -423,35 +459,41 @@ describe('DualScrollSync', () => {
     s.destroy();
   });
 
-  test('destroy during pump cancels pending frame', (t, done) => {
+  test('destroy during pump cancels pending frame', () => {
+    const sched = syncScheduler();
     let frameCount = 0;
     const s = makeSync(a, b, {
       wheel: { smooth: 0.5 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     s.ensureMap();
     s.onSync = () => { frameCount++; };
     a._fire('wheel', wheelEvent(100));
     s.destroy();
-
-    setTimeout(() => {
-      assert.ok(frameCount <= 1, `expected ≤1 frames after destroy, got ${frameCount}`);
-      done();
-    }, 100);
+    sched.drain();
+    assert.ok(frameCount <= 1, `expected ≤1 frames after destroy, got ${frameCount}`);
   });
 
-  test('echo guard: exactly 2px offset passes through', () => {
+  test('echo guard: 2px offset absorbed, 3px passes through', () => {
     const s = makeSync(a, b);
     s.ensureMap();
     a.scrollTop = 200;
     a._fire('scroll');
     const bAfterSync = b.scrollTop;
     const aAfterSync = a.scrollTop;
-    // Simulate browser rounding scrollTop by 2px
+    // 2px rounding is absorbed (< 3)
     b.scrollTop = bAfterSync + 2;
     b._fire('scroll');
-    // 2px is NOT < 2, so echo guard does NOT absorb → B's scroll triggers re-sync
-    assert.notEqual(a.scrollTop, aAfterSync, 'A should have been re-synced');
+    near(a.scrollTop, aAfterSync, 0.01, 'A should NOT re-sync for 2px echo');
+    // 3px offset passes through (NOT < 3)
+    a.scrollTop = 200;
+    a._fire('scroll');
+    const bAfterSync2 = b.scrollTop;
+    const aAfterSync2 = a.scrollTop;
+    b.scrollTop = bAfterSync2 + 3;
+    b._fire('scroll');
+    assert.notEqual(a.scrollTop, aAfterSync2, 'A should re-sync for 3px offset');
     s.destroy();
   });
 
@@ -464,7 +506,7 @@ describe('DualScrollSync', () => {
       preventDefault() {},
     });
     // wheelSmooth=1 → instant. 3 lines × 16 = 48 virtual px
-    const v = s._vCurrent;
+    const v = deriveV(s);
     assert.ok(v >= 47 && v <= 49, `expected ~48 virtual px, got ${v}`);
     s.destroy();
   });
@@ -478,48 +520,45 @@ describe('DualScrollSync', () => {
       preventDefault() {},
     });
     // 1 page × 500 (clientHeight) = 500 virtual px
-    const v = s._vCurrent;
+    const v = deriveV(s);
     assert.ok(v >= 499 && v <= 501, `expected ~500 virtual px, got ${v}`);
     s.destroy();
   });
 
-  test('invalidate during pump uses new map', (t, done) => {
+  test('invalidate during pump uses new map', () => {
+    const sched = syncScheduler();
     let mapCount = 0;
     const s = makeSync(a, b, {
       wheel: { smooth: 0.5 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
       onMapBuilt: () => { mapCount++; },
     });
     s.ensureMap();
     assert.equal(mapCount, 1);
     a._fire('wheel', wheelEvent(100));
-    // Invalidate while pump is running
     s.invalidate();
-    setTimeout(() => {
-      // Pump frames call ensureMap → should have rebuilt
-      assert.ok(mapCount >= 2, `expected map rebuild during pump, got ${mapCount}`);
-      s.destroy();
-      done();
-    }, 100);
+    sched.drain();
+    assert.ok(mapCount >= 2, `expected map rebuild during pump, got ${mapCount}`);
+    s.destroy();
   });
 
-  test('scroll during pump: user scroll takes priority', (t, done) => {
+  test('scroll during pump: user scroll takes priority', () => {
+    const sched = syncScheduler();
     const s = makeSync(a, b, {
       wheel: { smooth: 0.5 },
-      requestFrame: (fn) => setTimeout(fn, 5),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     s.ensureMap();
     a._fire('wheel', wheelEvent(100));
-    // Simulate user scrollbar drag on paneB while pump is running
-    setTimeout(() => {
-      b.scrollTop = 800;
-      b._fire('scroll');
-      const aAfterScroll = a.scrollTop;
-      // A should have synced to B's position (b=800 → a≈~500 area)
-      assert.ok(aAfterScroll > 0, 'A should sync to B scroll during pump');
-      s.destroy();
-      done();
-    }, 20);
+    // Drain one frame so pump is mid-flight
+    sched.drain(1);
+    // Simulate user scrollbar drag on paneB
+    b.scrollTop = 800;
+    b._fire('scroll');
+    assert.ok(a.scrollTop > 0, 'A should sync to B scroll during pump');
+    s.destroy();
   });
 
   test('negative deltaY scrolls upward', () => {
@@ -527,12 +566,12 @@ describe('DualScrollSync', () => {
     s.ensureMap();
     // Scroll down first
     a._fire('wheel', wheelEvent(300));
-    const vAfterDown = s._vCurrent;
-    assert.ok(vAfterDown > 0, 'should have scrolled down');
+    const aAfterDown = a.scrollTop;
+    assert.ok(aAfterDown > 0, 'should have scrolled down');
     // Scroll up
     a._fire('wheel', wheelEvent(-100));
-    assert.ok(s._vCurrent < vAfterDown, 'negative delta should scroll up');
-    assert.ok(s._vCurrent > 0, 'should not go below 0');
+    assert.ok(a.scrollTop < aAfterDown, 'negative delta should scroll up');
+    assert.ok(a.scrollTop > 0, 'should not go below 0');
     s.destroy();
   });
 
@@ -540,34 +579,31 @@ describe('DualScrollSync', () => {
     const s = makeSync(a, b);
     s.ensureMap();
     a._fire('wheel', wheelEvent(-9999));
-    assert.equal(s._vCurrent, 0, 'vCurrent should clamp at 0');
     assert.equal(a.scrollTop, 0);
     assert.equal(b.scrollTop, 0);
     s.destroy();
   });
 
-  test('rapid wheel events accumulate in pump', (t, done) => {
+  test('rapid wheel events accumulate in pump', () => {
+    const sched = syncScheduler();
     const s = makeSync(a, b, {
       wheel: { smooth: 0.5 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     s.ensureMap();
-    // Fire 5 rapid wheel events before any frame runs
     for (let i = 0; i < 5; i++) {
       a._fire('wheel', wheelEvent(50));
     }
-    // Total accumulated: 250px
-    setTimeout(() => {
-      // After drain, vCurrent should reflect ~250px total
-      assert.ok(s._vCurrent > 200, `expected >200 virtual px, got ${s._vCurrent}`);
-      s.destroy();
-      done();
-    }, 200);
+    sched.drain();
+    const v = deriveV(s);
+    assert.ok(v > 200, `expected >200 virtual px, got ${v}`);
+    s.destroy();
   });
 
   test('scroll before explicit ensureMap does not crash', () => {
     const s = makeSync(a, b);
-    // No explicit ensureMap call — _handleScroll builds map on demand
+    // No explicit ensureMap call — #handleScroll builds map on demand
     a.scrollTop = 100;
     a._fire('scroll');
     // Should work: map is built lazily
@@ -579,101 +615,79 @@ describe('DualScrollSync', () => {
 // ─── Anchor braking ───
 
 describe('anchor braking', () => {
-  let a, b;
-  beforeEach(() => {
-    a = mockPane(2000);
-    b = mockPane(3000);
-  });
+  // Integration tests: verify damping via 1-frame pump drain amount.
+  // drain per frame = delta × smooth(0.5) × damping(v).
+  // With delta=100, smooth=0.5: noBrake drain ≈ 50, factor=0.5 drain ≈ 25.
+  const DELTA = 100;
+  const NO_BRAKE_DRAIN = DELTA * 0.5; // damping = 1
 
   test('brake.factor=1 has no damping effect', () => {
-    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 1, zone: 100 } } });
-    assert.equal(s._anchorDamping(), 1);
-    s.destroy();
+    const d = pumpOneDelta(0, DELTA, { brake: { factor: 1, zone: 100 } });
+    near(d, NO_BRAKE_DRAIN, 1);
   });
 
   test('brake.zone=0 disables damping', () => {
-    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 0 } } });
-    assert.equal(s._anchorDamping(), 1);
-    s.destroy();
+    const d = pumpOneDelta(0, DELTA, { brake: { factor: 0.5, zone: 0 } });
+    near(d, NO_BRAKE_DRAIN, 1);
   });
 
   test('no brake option disables damping', () => {
-    const s = makeSync(a, b, { wheel: { smooth: 1 } });
-    assert.equal(s._anchorDamping(), 1);
-    s.destroy();
+    const d = pumpOneDelta(0, DELTA, {});
+    near(d, NO_BRAKE_DRAIN, 1);
   });
 
   test('at anchor (v=0), damping = brake.factor', () => {
-    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 100 } } });
-    s.ensureMap();
-    s._vCurrent = 0; // segment boundary at v=0
-    near(s._anchorDamping(), 0.5, 0.01);
-    s.destroy();
+    // At v=0 (segment boundary), damping = factor = 0.5 → drain = 100×0.5×0.5 = 25
+    const d = pumpOneDelta(0, DELTA, { brake: { factor: 0.5, zone: 100 } });
+    near(d, DELTA * 0.5 * 0.5, 1);
   });
 
   test('far from any anchor, damping = 1.0', () => {
-    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 50 } } });
-    s.ensureMap();
-    // Place vCurrent far from all segment boundaries
-    const segs = s._data.segments;
-    // Mid-point of the largest segment
-    let best = segs[0];
-    for (const seg of segs) { if (seg.vS > best.vS) best = seg; }
-    s._vCurrent = best.vPx + best.vS / 2;
-    // If segment is large enough, midpoint is > brake.zone from both edges
-    if (best.vS / 2 > 50) {
-      near(s._anchorDamping(), 1.0, 0.01);
-    }
-    s.destroy();
+    // v=300 is far from anchors at 0, 600, 900 with zone=50 → damping = 1
+    const d = pumpOneDelta(300, DELTA, { brake: { factor: 0.5, zone: 50 } });
+    near(d, NO_BRAKE_DRAIN, 1);
   });
 
-  test('smoothstep curve is non-linear (midpoint ≠ 0.75)', () => {
-    const s = makeSync(a, b, { wheel: { smooth: 1, brake: { factor: 0.5, zone: 100 } } });
-    s.ensureMap();
-    // Place vCurrent at half the zone distance from anchor at v=0
-    s._vCurrent = 50;
-    const fMid = s._anchorDamping();
-    // smoothstep(0.5) = 0.5, factor = 0.5 + 0.5*0.5 = 0.75 (same as linear at midpoint)
-    near(fMid, 0.75, 0.01);
-    // But at t=0.25: smoothstep=0.15625, factor=0.578 (linear would be 0.625)
-    s._vCurrent = 25; // t=0.25
-    const f2 = s._anchorDamping();
-    const linearExpected = 0.5 + 0.5 * 0.25; // 0.625
-    assert.ok(f2 < linearExpected, `smoothstep at t=0.25 should be < linear (${f2} < ${linearExpected})`);
-    s.destroy();
+  test('smoothstep curve is non-linear', () => {
+    // At t=0.25 (v=25, zone=100), smoothstep gives less damping than linear
+    const dQuarter = pumpOneDelta(25, DELTA, { brake: { factor: 0.5, zone: 100 } });
+    const dHalf = pumpOneDelta(50, DELTA, { brake: { factor: 0.5, zone: 100 } });
+    // Linear: d(25)/d(50) would be ~0.578/0.75 ≈ 0.77
+    // Smoothstep: d(25)/d(50) ≈ 0.578/0.75 but d(25) < linear-d(25)
+    const linearQuarter = DELTA * 0.5 * (0.5 + 0.5 * 0.25); // 0.625 × 50 = 31.25
+    assert.ok(dQuarter < linearQuarter,
+      `smoothstep at quarter zone should be < linear (${dQuarter} < ${linearQuarter})`);
+    assert.ok(dQuarter < dHalf, 'closer to anchor should drain less');
   });
 
-  test('pump drains slower near anchor with braking', (t, done) => {
-    // With braking
+  test('pump drains slower near anchor with braking', () => {
+    const a = mockPane(2000), b = mockPane(3000);
+    const a2 = mockPane(2000), b2 = mockPane(3000);
+    const sched1 = syncScheduler();
     const sBrake = makeSync(a, b, {
       wheel: { smooth: 0.5, brake: { factor: 0.3, zone: 200 } },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched1.requestFrame,
+      cancelFrame: sched1.cancelFrame,
     });
     sBrake.ensureMap();
-
-    // Without braking (control)
-    const a2 = mockPane(2000);
-    const b2 = mockPane(3000);
+    const sched2 = syncScheduler();
     const sNoBrake = makeSync(a2, b2, {
       wheel: { smooth: 0.5 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched2.requestFrame,
+      cancelFrame: sched2.cancelFrame,
     });
     sNoBrake.ensureMap();
 
-    // Both start at v=0 (on anchor) and receive same delta
     a._fire('wheel', wheelEvent(50));
     a2._fire('wheel', wheelEvent(50));
-
-    setTimeout(() => {
-      // Braked instance should have moved less after same elapsed time
-      assert.ok(
-        sBrake._vCurrent <= sNoBrake._vCurrent,
-        `braked (${sBrake._vCurrent}) should be ≤ unbraked (${sNoBrake._vCurrent})`
-      );
-      sBrake.destroy();
-      sNoBrake.destroy();
-      done();
-    }, 60);
+    sched1.drain(3);
+    sched2.drain(3);
+    assert.ok(
+      a.scrollTop <= a2.scrollTop,
+      `braked (${a.scrollTop}) should be ≤ unbraked (${a2.scrollTop})`
+    );
+    sBrake.destroy();
+    sNoBrake.destroy();
   });
 });
 
@@ -690,12 +704,17 @@ describe('alignOffset', () => {
     const s = makeSync(a, b, { alignOffset: 30 });
     s.ensureMap();
     a._fire('wheel', wheelEvent(200));
-    const v = s._vCurrent;
-    const segs = s.ensureMap().segments;
-    // Pane positions should be lookup(v) - offset
-    near(a.scrollTop, lookup(segs, 'vPx', 'aPx', v) - 30, 1);
-    near(b.scrollTop, lookup(segs, 'vPx', 'bPx', v) - 30, 1);
+    const aWith = a.scrollTop;
+    const bWith = b.scrollTop;
     s.destroy();
+    // Compare against no-offset baseline with same delta
+    const a2 = mockPane(2000), b2 = mockPane(3000);
+    const s2 = makeSync(a2, b2);
+    s2.ensureMap();
+    a2._fire('wheel', wheelEvent(200));
+    near(aWith, a2.scrollTop - 30, 1);
+    near(bWith, b2.scrollTop - 30, 1);
+    s2.destroy();
   });
 
   test('alignOffset=0 is equivalent to no offset', () => {
@@ -719,10 +738,10 @@ describe('alignOffset', () => {
     // Simulate scrollbar drag on pane A
     a.scrollTop = 200;
     a._fire('scroll');
-    // vCurrent should account for offset: lookup(aPx, vPx, scrollTop + offset)
+    // Verify b.scrollTop reflects the correct virtual position (accounting for offset)
     const segs = s.ensureMap().segments;
     const expectedV = lookup(segs, 'aPx', 'vPx', 200 + 20);
-    near(s._vCurrent, expectedV, 1);
+    near(b.scrollTop, lookup(segs, 'vPx', 'bPx', expectedV) - 20, 1);
     s.destroy();
   });
 });
@@ -760,79 +779,81 @@ describe('wheel snap', () => {
     assert.equal(segments[0].snap, undefined);
   });
 
-  test('_trySnap triggers snap when within range', (t, done) => {
+  test('snap triggers when pump ends within range', () => {
+    const sched = syncScheduler();
     const s = new DualScrollSync(a, b, {
       getAnchors: () => [{ aPx: 200, bPx: 600, snap: true }],
       wheel: { smooth: 0.5, snap: 50 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     s.ensureMap();
     const anchorV = s.ensureMap().segments[1].vPx;
-    // Place vCurrent 30px before anchor (within snap range of 50)
-    s._vCurrent = anchorV - 30;
-    s._applyV();
-    s._trySnap();
-    // After snap animation completes, should be at anchor
-    setTimeout(() => {
-      near(s._vCurrent, anchorV, 5);
-      s.destroy();
-      done();
-    }, 200);
+    s.scrollTo(anchorV - 30);
+    // Fire tiny wheel event → pump drains → trySnap fires
+    a._fire('wheel', wheelEvent(1));
+    sched.drain();
+    near(deriveV(s), anchorV, 5);
+    s.destroy();
   });
 
-  test('_trySnap does nothing when out of range', () => {
+  test('snap does not trigger when out of range', () => {
+    const sched = syncScheduler();
     const s = new DualScrollSync(a, b, {
       getAnchors: () => [{ aPx: 500, bPx: 800, snap: true }],
       wheel: { smooth: 0.5, snap: 10 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     s.ensureMap();
-    // Place vCurrent far from any anchor
     const anchorV = s.ensureMap().segments[1].vPx;
-    s._vCurrent = anchorV - 100;
-    s._applyV();
-    const vBefore = s._vCurrent;
-    s._trySnap();
-    // Should not have started snap (no pump scheduled)
-    assert.equal(s._vCurrent, vBefore);
+    s.scrollTo(anchorV - 100);
+    // Fire tiny wheel event → pump drains → trySnap fires but distance > snap
+    a._fire('wheel', wheelEvent(1));
+    sched.drain();
+    const dist = Math.abs(deriveV(s) - anchorV);
+    assert.ok(dist > 10, `should not snap, dist=${dist}`);
     s.destroy();
   });
 
   test('snap=0 disables snap entirely', () => {
+    const sched = syncScheduler();
     const s = new DualScrollSync(a, b, {
       getAnchors: () => [{ aPx: 200, bPx: 600, snap: true }],
       wheel: { smooth: 0.5, snap: 0 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     s.ensureMap();
     const anchorV = s.ensureMap().segments[1].vPx;
-    s._vCurrent = anchorV - 5;
-    s._applyV();
-    const vBefore = s._vCurrent;
-    s._trySnap();
-    assert.equal(s._vCurrent, vBefore);
+    s.scrollTo(anchorV - 5);
+    // Fire tiny wheel event → pump drains → no snap (snap=0)
+    a._fire('wheel', wheelEvent(1));
+    sched.drain();
+    const dist = Math.abs(deriveV(s) - anchorV);
+    assert.ok(dist > 1, 'should not snap with snap=0');
     s.destroy();
   });
 
   test('with hasSnap, only snap anchors are snap targets', () => {
+    const sched = syncScheduler();
     const s = new DualScrollSync(a, b, {
       getAnchors: () => [
         { aPx: 200, bPx: 400 },           // no snap
         { aPx: 500, bPx: 800, snap: true }, // snap target
       ],
       wheel: { smooth: 0.5, snap: 50 },
-      requestFrame: (fn) => setTimeout(fn, 1),
+      requestFrame: sched.requestFrame,
+      cancelFrame: sched.cancelFrame,
     });
     const d = s.ensureMap();
-    // seg[1] is at the non-snap anchor, seg[2] is at the snap anchor
     const nonSnapV = d.segments[1].vPx;
-    // Place near the non-snap anchor (not near snap anchor at segments[2])
-    s._vCurrent = nonSnapV - 5;
-    s._applyV();
-    const vBefore = s._vCurrent;
-    s._trySnap();
-    // Should NOT snap to non-snap anchor
-    assert.equal(s._vCurrent, vBefore);
+    s.scrollTo(nonSnapV - 5);
+    // Fire tiny wheel event near non-snap anchor → should NOT snap
+    a._fire('wheel', wheelEvent(1));
+    sched.drain();
+    const dist = Math.abs(deriveV(s) - nonSnapV);
+    assert.ok(dist > 1, 'should not snap to non-snap anchor');
     s.destroy();
   });
 });

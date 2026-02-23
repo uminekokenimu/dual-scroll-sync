@@ -62,7 +62,13 @@ export class DualScrollSync {
      * @returns {MapData}
      */
     ensureMap(): MapData;
+    /**
+     * Scroll both panes to a virtual-axis position.
+     * @param {number} v - Virtual axis position (px). Clamped to [0, vTotal].
+     */
+    scrollTo(v: number): void;
     /** Remove all event listeners and timers. */
     destroy(): void;
+    #private;
 }
 export default DualScrollSync;

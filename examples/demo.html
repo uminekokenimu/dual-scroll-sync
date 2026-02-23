@@ -877,6 +877,8 @@
             document.getElementById("sv").textContent = Math.round(vt);
           }
 
+          var currentV = 0;
+
           var sync = new SyncClass(ep, pp, {
             getAnchors: function () {
               return getAnchors(ep, pp, edEl, pvEl);
@@ -891,18 +893,22 @@
               updateInd(d);
             },
             onSync: function () {
+              var d = sync.ensureMap();
+              currentV = lookup(
+                d.segments,
+                "aPx",
+                "vPx",
+                ep.scrollTop + sync.alignOffset,
+              );
               document.getElementById("fa").textContent = Math.round(
                 ep.scrollTop,
               );
               document.getElementById("fb").textContent = Math.round(
                 pp.scrollTop,
               );
-              document.getElementById("fv").textContent = Math.round(
-                sync._vCurrent,
-              );
-              var vt = sync._data ? sync._data.vTotal : 1;
-              ic.style.top =
-                (vt > 0 ? (sync._vCurrent / vt) * 100 : 0) + "%";
+              document.getElementById("fv").textContent = Math.round(currentV);
+              var vt = d.vTotal || 1;
+              ic.style.top = (vt > 0 ? (currentV / vt) * 100 : 0) + "%";
             },
           });
           sync.ensureMap();
@@ -914,14 +920,8 @@
               0,
               Math.min(1, (e.clientY - r.top) / r.height),
             );
-            var d = sync.ensureMap();
-            var v = f * d.vTotal;
-            sync._vCurrent = v;
-            ep.scrollTop = lookup(d.segments, "vPx", "aPx", v);
-            pp.scrollTop = lookup(d.segments, "vPx", "bPx", v);
-            sync._expectedA = ep.scrollTop;
-            sync._expectedB = pp.scrollTop;
-            if (sync.onSync) sync.onSync();
+            var v = f * sync.ensureMap().vTotal;
+            sync.scrollTo(v);
           }
           ind.addEventListener("mousedown", function (e) {
             if (e.button === 0) {
@@ -963,7 +963,7 @@
 
           bindSlider("opt-alignOffset", "val-alignOffset", 1, function (v) {
             sync.alignOffset = v;
-            sync._applyV();
+            sync.scrollTo(currentV);
           });
 
           bindSlider("opt-smooth", "val-smooth", 100, function (v) {
@@ -979,12 +979,14 @@
             "val-brakeFactor",
             100,
             function (v) {
-              sync.wheel.brake.factor = v;
+              if (!sync.wheel.brake) sync.wheel.brake = { factor: v, zone: 80 };
+              else sync.wheel.brake.factor = v;
             },
           );
 
           bindSlider("opt-brakeZone", "val-brakeZone", 1, function (v) {
-            sync.wheel.brake.zone = v;
+            if (!sync.wheel.brake) sync.wheel.brake = { factor: 0.2, zone: v };
+            else sync.wheel.brake.zone = v;
           });
 
           // Edit → rebuild
