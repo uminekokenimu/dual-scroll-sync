@@ -92,6 +92,11 @@ describe('buildMap', () => {
 // ─── lookup ───
 
 describe('lookup', () => {
+  test('empty segments → returns 0', () => {
+    assert.equal(lookup([], 'vPx', 'aPx', 100), 0);
+    assert.equal(lookup([], 'aPx', 'vPx', 0), 0);
+  });
+
   const { segments, vTotal } = buildMap([{ aPx: 200, bPx: 600 }], 1000, 1000);
 
   test('v=0 → a=0, b=0', () => {
@@ -311,6 +316,17 @@ describe('DualScrollSync', () => {
     const d = s.ensureMap();
     assert.deepEqual(d.segments, []);
     assert.equal(d.vTotal, 0);
+    assert.equal(d.droppedCount, 0);
+    s.destroy();
+  });
+
+  test('wheel after getAnchors exception does not crash', () => {
+    const s = new DualScrollSync(a, b, {
+      getAnchors: () => { throw new Error('broken'); },
+      wheelSmooth: 1,
+    });
+    a._fire('wheel', wheelEvent(100));
+    assert.equal(a.scrollTop, 0);
     s.destroy();
   });
 
@@ -379,5 +395,183 @@ describe('DualScrollSync', () => {
       s.destroy();
       done();
     }, 200);
+  });
+
+  test('wheelSmooth=0 does not preventDefault and does not start pump', () => {
+    let frameRequested = false;
+    let prevented = false;
+    const s = makeSync(a, b, {
+      wheelSmooth: 0,
+      requestFrame: (fn) => { frameRequested = true; return setTimeout(fn, 1); },
+    });
+    s.ensureMap();
+    a._fire('wheel', {
+      ...wheelEvent(100),
+      preventDefault() { prevented = true; },
+    });
+    assert.equal(a.scrollTop, 0, 'wheelSmooth=0 should not move');
+    assert.equal(prevented, false, 'preventDefault should not be called');
+    assert.equal(frameRequested, false, 'pump should not start');
+    s.destroy();
+  });
+
+  test('wheelSmooth > 1 treated as instant', () => {
+    const s = makeSync(a, b, { wheelSmooth: 2 });
+    s.ensureMap();
+    a._fire('wheel', wheelEvent(100));
+    assert.ok(a.scrollTop > 0, 'should move synchronously');
+    s.destroy();
+  });
+
+  test('destroy during pump cancels pending frame', (t, done) => {
+    let frameCount = 0;
+    const s = makeSync(a, b, {
+      wheelSmooth: 0.5,
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    s.ensureMap();
+    s.onSync = () => { frameCount++; };
+    a._fire('wheel', wheelEvent(100));
+    s.destroy();
+
+    setTimeout(() => {
+      assert.ok(frameCount <= 1, `expected ≤1 frames after destroy, got ${frameCount}`);
+      done();
+    }, 100);
+  });
+
+  test('echo guard: exactly 2px offset passes through', () => {
+    const s = makeSync(a, b);
+    s.ensureMap();
+    a.scrollTop = 200;
+    a._fire('scroll');
+    const bAfterSync = b.scrollTop;
+    const aAfterSync = a.scrollTop;
+    // Simulate browser rounding scrollTop by 2px
+    b.scrollTop = bAfterSync + 2;
+    b._fire('scroll');
+    // 2px is NOT < 2, so echo guard does NOT absorb → B's scroll triggers re-sync
+    assert.notEqual(a.scrollTop, aAfterSync, 'A should have been re-synced');
+    s.destroy();
+  });
+
+  test('deltaMode=1 (lines) multiplies deltaY by 16', () => {
+    const s = makeSync(a, b);
+    s.ensureMap();
+    a._fire('wheel', {
+      deltaY: 3, deltaX: 0, deltaMode: 1,
+      shiftKey: false, ctrlKey: false, metaKey: false,
+      preventDefault() {},
+    });
+    // wheelSmooth=1 → instant. 3 lines × 16 = 48 virtual px
+    const v = s._vCurrent;
+    assert.ok(v >= 47 && v <= 49, `expected ~48 virtual px, got ${v}`);
+    s.destroy();
+  });
+
+  test('deltaMode=2 (pages) multiplies deltaY by clientHeight', () => {
+    const s = makeSync(a, b);
+    s.ensureMap();
+    a._fire('wheel', {
+      deltaY: 1, deltaX: 0, deltaMode: 2,
+      shiftKey: false, ctrlKey: false, metaKey: false,
+      preventDefault() {},
+    });
+    // 1 page × 500 (clientHeight) = 500 virtual px
+    const v = s._vCurrent;
+    assert.ok(v >= 499 && v <= 501, `expected ~500 virtual px, got ${v}`);
+    s.destroy();
+  });
+
+  test('invalidate during pump uses new map', (t, done) => {
+    let mapCount = 0;
+    const s = makeSync(a, b, {
+      wheelSmooth: 0.5,
+      requestFrame: (fn) => setTimeout(fn, 1),
+      onMapBuilt: () => { mapCount++; },
+    });
+    s.ensureMap();
+    assert.equal(mapCount, 1);
+    a._fire('wheel', wheelEvent(100));
+    // Invalidate while pump is running
+    s.invalidate();
+    setTimeout(() => {
+      // Pump frames call ensureMap → should have rebuilt
+      assert.ok(mapCount >= 2, `expected map rebuild during pump, got ${mapCount}`);
+      s.destroy();
+      done();
+    }, 100);
+  });
+
+  test('scroll during pump: user scroll takes priority', (t, done) => {
+    const s = makeSync(a, b, {
+      wheelSmooth: 0.5,
+      requestFrame: (fn) => setTimeout(fn, 5),
+    });
+    s.ensureMap();
+    a._fire('wheel', wheelEvent(100));
+    // Simulate user scrollbar drag on paneB while pump is running
+    setTimeout(() => {
+      b.scrollTop = 800;
+      b._fire('scroll');
+      const aAfterScroll = a.scrollTop;
+      // A should have synced to B's position (b=800 → a≈~500 area)
+      assert.ok(aAfterScroll > 0, 'A should sync to B scroll during pump');
+      s.destroy();
+      done();
+    }, 20);
+  });
+
+  test('negative deltaY scrolls upward', () => {
+    const s = makeSync(a, b);
+    s.ensureMap();
+    // Scroll down first
+    a._fire('wheel', wheelEvent(300));
+    const vAfterDown = s._vCurrent;
+    assert.ok(vAfterDown > 0, 'should have scrolled down');
+    // Scroll up
+    a._fire('wheel', wheelEvent(-100));
+    assert.ok(s._vCurrent < vAfterDown, 'negative delta should scroll up');
+    assert.ok(s._vCurrent > 0, 'should not go below 0');
+    s.destroy();
+  });
+
+  test('negative deltaY clamps at 0', () => {
+    const s = makeSync(a, b);
+    s.ensureMap();
+    a._fire('wheel', wheelEvent(-9999));
+    assert.equal(s._vCurrent, 0, 'vCurrent should clamp at 0');
+    assert.equal(a.scrollTop, 0);
+    assert.equal(b.scrollTop, 0);
+    s.destroy();
+  });
+
+  test('rapid wheel events accumulate in pump', (t, done) => {
+    const s = makeSync(a, b, {
+      wheelSmooth: 0.5,
+      requestFrame: (fn) => setTimeout(fn, 1),
+    });
+    s.ensureMap();
+    // Fire 5 rapid wheel events before any frame runs
+    for (let i = 0; i < 5; i++) {
+      a._fire('wheel', wheelEvent(50));
+    }
+    // Total accumulated: 250px
+    setTimeout(() => {
+      // After drain, vCurrent should reflect ~250px total
+      assert.ok(s._vCurrent > 200, `expected >200 virtual px, got ${s._vCurrent}`);
+      s.destroy();
+      done();
+    }, 200);
+  });
+
+  test('scroll before explicit ensureMap does not crash', () => {
+    const s = makeSync(a, b);
+    // No explicit ensureMap call — _handleScroll builds map on demand
+    a.scrollTop = 100;
+    a._fire('scroll');
+    // Should work: map is built lazily
+    assert.ok(b.scrollTop > 0, 'B should sync even without prior ensureMap');
+    s.destroy();
   });
 });
