@@ -63,9 +63,9 @@ export function buildMap(anchors, sMaxA, sMaxB) {
       aPx: pts[i].aPx,
       bPx: pts[i].bPx,
       vPx: vCum,
-      aS: aS,
-      bS: bS,
-      vS: vS,
+      aS,
+      bS,
+      vS,
     });
     vCum += vS;
   }
@@ -73,7 +73,7 @@ export function buildMap(anchors, sMaxA, sMaxB) {
   return {
     segments: map,
     vTotal: vCum,
-    droppedCount: droppedCount,
+    droppedCount,
   };
 }
 
