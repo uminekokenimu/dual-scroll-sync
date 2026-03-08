@@ -7,7 +7,7 @@ Each segment's virtual length is `vS = max(aS, bS)` — the pane with more conte
 ## Install
 
 ```
-npm install dual-scroll-sync
+npm install github:uminekokenimu/dual-scroll-sync
 ```
 
 ## Demo
